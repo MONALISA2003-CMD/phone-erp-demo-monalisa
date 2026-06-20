@@ -1,0 +1,2472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Monalisa Stock ERP</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<style>
+:root{
+  --bg:#13161f;--surf:#1c2030;--card:#232840;--card2:#2a3050;
+  --border:rgba(255,255,255,.07);--border2:rgba(255,255,255,.13);
+  --text:#e8eaf0;--muted:#7a8499;
+  --green:#00c896;--green2:#009e78;--amber:#f5a623;--red:#e84545;
+  --blue:#4c6ef5;--violet:#8b5cf6;
+  --sw:248px;--th:58px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:14px}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--card2);border-radius:3px}
+
+/* ============ SPLASH ============ */
+#splash{position:fixed;inset:0;background:var(--bg);z-index:9000;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .5s ease}
+#splash.out{opacity:0;pointer-events:none}
+.sp-mark{width:64px;height:64px;background:linear-gradient(145deg,var(--green),#0084ff);border-radius:18px;display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;font-size:26px;font-weight:800;margin-bottom:18px;box-shadow:0 0 40px rgba(0,200,150,.28)}
+.sp-name{font-family:'Space Grotesk',sans-serif;font-size:20px;font-weight:700;margin-bottom:4px}
+.sp-tag{font-size:11px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;margin-bottom:40px}
+.sp-track{width:180px;height:3px;background:var(--card2);border-radius:2px;overflow:hidden}
+.sp-bar{height:100%;background:linear-gradient(90deg,var(--green),#4c6ef5);width:0;animation:load 1.8s cubic-bezier(.4,0,.2,1) forwards}
+@keyframes load{0%{width:0}60%{width:72%}100%{width:100%}}
+.sp-hint{font-size:11px;color:var(--muted);margin-top:10px}
+
+/* ============ LOGIN SCREEN ============ */
+#loginScreen{position:fixed;inset:0;background:var(--bg);z-index:8000;display:none;overflow-y:auto}
+#loginScreen.on{display:flex}
+.login-wrap{display:flex;width:100%;min-height:100vh}
+.login-side{flex:1;background:linear-gradient(150deg,#0d3b2e 0%,#0a2540 55%,#13161f 100%);display:flex;flex-direction:column;justify-content:center;padding:60px;position:relative;overflow:hidden}
+.login-side::before{content:'';position:absolute;top:-100px;right:-100px;width:400px;height:400px;background:radial-gradient(circle,rgba(0,200,150,.15),transparent 70%)}
+.login-side::after{content:'';position:absolute;bottom:-150px;left:-100px;width:400px;height:400px;background:radial-gradient(circle,rgba(76,110,245,.12),transparent 70%)}
+.login-brand{position:relative;z-index:1}
+.login-brand-mark{width:54px;height:54px;background:linear-gradient(145deg,var(--green),#0084ff);border-radius:16px;display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;font-size:22px;font-weight:800;margin-bottom:24px}
+.login-brand h1{font-family:'Space Grotesk',sans-serif;font-size:30px;font-weight:700;margin-bottom:10px;line-height:1.2}
+.login-brand p{color:rgba(255,255,255,.65);font-size:14px;max-width:380px;line-height:1.6;margin-bottom:32px}
+.login-feature{display:flex;align-items:flex-start;gap:12px;margin-bottom:18px;max-width:380px}
+.login-feature i{width:34px;height:34px;background:rgba(0,200,150,.15);border:1px solid rgba(0,200,150,.25);border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--green);font-size:14px;flex-shrink:0}
+.login-feature div b{font-size:13px;display:block;margin-bottom:2px}
+.login-feature div span{font-size:12px;color:rgba(255,255,255,.55)}
+
+.login-form-side{flex:1;display:flex;align-items:center;justify-content:center;padding:40px;background:var(--surf)}
+.login-box{width:100%;max-width:380px}
+.login-box h2{font-family:'Space Grotesk',sans-serif;font-size:22px;font-weight:700;margin-bottom:6px}
+.login-box .sub{color:var(--muted);font-size:13px;margin-bottom:28px}
+.login-field{margin-bottom:16px}
+.login-field label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;display:block}
+.login-input-wrap{position:relative}
+.login-input-wrap i.lead{position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px}
+.login-input{width:100%;background:var(--card2);border:1px solid var(--border2);border-radius:10px;color:var(--text);padding:12px 14px 12px 38px;font-size:13.5px;outline:none;transition:.16s;font-family:'Inter',sans-serif}
+.login-input:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(0,200,150,.08)}
+.login-input::placeholder{color:var(--muted)}
+.pw-toggle{position:absolute;right:13px;top:50%;transform:translateY(-50%);color:var(--muted);cursor:pointer;font-size:13px;background:none;border:none;padding:4px}
+.pw-toggle:hover{color:var(--text)}
+.login-err{background:rgba(232,69,69,.1);border:1px solid rgba(232,69,69,.25);color:var(--red);font-size:12px;padding:9px 12px;border-radius:8px;margin-bottom:14px;display:none;align-items:center;gap:7px}
+.login-err.show{display:flex}
+.login-btn{width:100%;background:linear-gradient(135deg,var(--green),var(--green2));color:#0a1a14;border:none;border-radius:10px;padding:13px;font-size:14px;font-weight:700;cursor:pointer;transition:.16s;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:6px}
+.login-btn:hover{opacity:.9;transform:translateY(-1px)}
+.login-btn:disabled{opacity:.6;cursor:wait}
+.login-divider{display:flex;align-items:center;gap:10px;margin:22px 0;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:1px}
+.login-divider::before,.login-divider::after{content:'';flex:1;height:1px;background:var(--border)}
+.demo-users{display:flex;flex-direction:column;gap:7px;max-height:230px;overflow-y:auto}
+.demo-user-btn{display:flex;align-items:center;gap:10px;padding:9px 11px;background:var(--card2);border:1px solid var(--border);border-radius:9px;cursor:pointer;transition:.15s;text-align:left}
+.demo-user-btn:hover{border-color:var(--border2);background:var(--card)}
+.demo-user-btn .ava{width:30px;height:30px;font-size:11px}
+.demo-user-btn .info{flex:1;min-width:0}
+.demo-user-btn .info b{font-size:12px;display:block}
+.demo-user-btn .info span{font-size:10.5px;color:var(--muted)}
+.demo-user-btn .arrow{color:var(--muted);font-size:11px}
+.login-foot{margin-top:24px;text-align:center;font-size:11.5px;color:var(--muted)}
+.login-security-note{display:flex;align-items:flex-start;gap:8px;background:rgba(76,110,245,.07);border:1px solid rgba(76,110,245,.18);border-radius:8px;padding:10px 12px;margin-top:18px;font-size:11px;color:rgba(255,255,255,.6);line-height:1.5}
+.login-security-note i{color:var(--blue);margin-top:1px;flex-shrink:0}
+
+@media(max-width:860px){
+  .login-side{display:none}
+  .login-form-side{padding:24px}
+}
+
+/* ============ SECURITY LOCK SCREEN ============ */
+#lockScreen{position:fixed;inset:0;background:rgba(10,12,18,.92);backdrop-filter:blur(8px);z-index:7500;display:none;align-items:center;justify-content:center}
+#lockScreen.on{display:flex}
+.lock-box{background:var(--surf);border:1px solid var(--border2);border-radius:16px;padding:32px;width:100%;max-width:340px;text-align:center}
+.lock-icon{width:54px;height:54px;background:rgba(245,166,35,.15);border:1px solid rgba(245,166,35,.3);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:22px;color:var(--amber)}
+.lock-box h3{font-family:'Space Grotesk',sans-serif;font-size:17px;margin-bottom:6px}
+.lock-box p{font-size:12.5px;color:var(--muted);margin-bottom:18px}
+
+/* ============ LAYOUT ============ */
+#app{display:none;min-height:100vh}
+#app.on{display:flex}
+
+/* ============ SIDEBAR ============ */
+.sb{width:var(--sw);background:var(--surf);border-right:1px solid var(--border);position:fixed;top:0;left:0;height:100vh;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;z-index:200;transition:transform .28s ease}
+.sb-logo{padding:18px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0}
+.sb-mark{width:34px;height:34px;background:linear-gradient(145deg,var(--green),#0084ff);border-radius:10px;display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;font-weight:800;font-size:13px;flex-shrink:0}
+.sb-brand{font-family:'Space Grotesk',sans-serif;font-size:12px;font-weight:700;line-height:1.25}
+.sb-brand small{color:var(--green);font-size:9px;font-weight:500;letter-spacing:1.2px;text-transform:uppercase;display:block}
+
+.sb-sec{padding:14px 14px 5px;font-size:9px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1.4px}
+.nav{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;cursor:pointer;color:var(--muted);font-size:12.5px;font-weight:500;margin:1px 6px;transition:.16s;position:relative;user-select:none}
+.nav:hover{background:var(--card2);color:var(--text)}
+.nav.on{background:rgba(0,200,150,.1);color:var(--green);border:1px solid rgba(0,200,150,.15)}
+.nav.locked{opacity:.32;cursor:not-allowed}
+.nav i{width:16px;text-align:center;font-size:13px;flex-shrink:0}
+.nav .pip{margin-left:auto;background:var(--red);color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;min-width:16px;text-align:center;flex-shrink:0}
+.nav .pip.g{background:var(--green2)}.nav .pip.a{background:var(--amber);color:#111}
+
+.sb-foot{margin-top:auto;padding:10px;border-top:1px solid var(--border);flex-shrink:0}
+.sb-user{display:flex;align-items:center;gap:9px;padding:9px;background:var(--card);border-radius:8px;cursor:pointer;transition:.16s;position:relative}
+.sb-user:hover{background:var(--card2)}
+.ava{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex-shrink:0}
+.ava-g{background:linear-gradient(135deg,var(--violet),var(--blue))}
+.ava-b{background:linear-gradient(135deg,var(--blue),#06b6d4)}
+.ava-e{background:linear-gradient(135deg,var(--green),#0084ff)}
+.ava-r{background:linear-gradient(135deg,var(--red),#f97316)}
+.ava-p{background:linear-gradient(135deg,#a78bfa,#7c3aed)}
+.u-name{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.u-role{font-size:10px;color:var(--green);font-weight:500}
+.logout-menu{position:absolute;bottom:calc(100% + 6px);left:0;right:0;background:var(--card);border:1px solid var(--border2);border-radius:10px;padding:6px;display:none;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.logout-menu.open{display:block}
+.logout-item{padding:8px 10px;border-radius:7px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:8px;color:var(--text);transition:.14s}
+.logout-item:hover{background:var(--card2)}
+.logout-item.danger{color:var(--red)}
+
+/* ============ TOPBAR ============ */
+.top{height:var(--th);background:var(--surf);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 18px;gap:14px;position:sticky;top:0;z-index:100}
+.top-menu{display:none;background:none;border:none;color:var(--text);font-size:18px;cursor:pointer;padding:2px 6px}
+.top-title{font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:700;flex:1}
+.sbar{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--border2);border-radius:8px;padding:6px 12px;max-width:300px;flex:1;cursor:text;transition:.18s;position:relative}
+.sbar:focus-within{border-color:rgba(0,200,150,.4);box-shadow:0 0 0 3px rgba(0,200,150,.06)}
+.sbar input{background:none;border:none;outline:none;color:var(--text);font-size:12.5px;width:100%;font-family:'Inter',sans-serif}
+.sbar input::placeholder{color:var(--muted)}
+.top-acts{display:flex;gap:7px}
+.ico{width:34px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:8px;background:var(--card);border:1px solid var(--border);cursor:pointer;color:var(--muted);font-size:13px;transition:.16s;position:relative}
+.ico:hover{border-color:var(--border2);color:var(--text)}
+.ico .dot{position:absolute;top:7px;right:7px;width:6px;height:6px;background:var(--red);border-radius:50%;border:1.5px solid var(--surf)}
+.session-pill{display:flex;align-items:center;gap:6px;background:rgba(0,200,150,.08);border:1px solid rgba(0,200,150,.18);padding:5px 10px;border-radius:7px;font-size:11px;color:var(--green);font-weight:600}
+
+/* ============ MAIN ============ */
+.main{margin-left:var(--sw);flex:1;display:flex;flex-direction:column}
+.pg{display:none;padding:20px 22px;min-height:calc(100vh - var(--th))}
+.pg.on{display:block}
+
+/* ============ COMPONENTS ============ */
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px}
+.card-sm{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px}
+.hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px}
+.hd h2{font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:700}
+.hd2{font-size:13px;font-weight:700;margin-bottom:12px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;border:none;transition:.16s;font-family:'Inter',sans-serif;white-space:nowrap}
+.btn-g{background:linear-gradient(135deg,var(--green),var(--green2));color:#0a1a14}
+.btn-g:hover{opacity:.88;transform:translateY(-1px)}
+.btn-o{background:transparent;border:1px solid var(--border2);color:var(--text)}
+.btn-o:hover{border-color:var(--green);color:var(--green)}
+.btn-ghost{background:var(--card2);border:1px solid var(--border);color:var(--text)}
+.btn-danger{background:rgba(232,69,69,.12);color:var(--red);border:1px solid rgba(232,69,69,.25)}
+.btn-wa{background:rgba(37,211,102,.14);color:#25d366;border:1px solid rgba(37,211,102,.3)}
+.btn-wa:hover{background:rgba(37,211,102,.22)}
+.btn-mail{background:rgba(76,110,245,.14);color:var(--blue);border:1px solid rgba(76,110,245,.3)}
+.btn-mail:hover{background:rgba(76,110,245,.22)}
+.btn-sm{padding:5px 11px;font-size:11.5px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.g2{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.between{display:flex;align-items:center;justify-content:space-between}
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:10.5px;font-weight:600}
+.b-g{background:rgba(0,200,150,.12);color:var(--green)}
+.b-r{background:rgba(232,69,69,.12);color:var(--red)}
+.b-a{background:rgba(245,166,35,.12);color:var(--amber)}
+.b-b{background:rgba(76,110,245,.12);color:var(--blue)}
+.b-v{background:rgba(139,92,246,.12);color:var(--violet)}
+.muted{color:var(--muted)}.green{color:var(--green)}.red{color:var(--red)}.amber{color:var(--amber)}.blue{color:var(--blue)}
+.bold{font-weight:700}.xs{font-size:11px}.sm{font-size:12px}.lg{font-size:18px}
+.mono{font-family:monospace;font-size:11.5px;color:var(--muted)}
+.mt4{margin-top:4px}.mt8{margin-top:8px}.mt12{margin-top:12px}.mt16{margin-top:16px}.mt20{margin-top:20px}
+.mb4{margin-bottom:4px}.mb8{margin-bottom:8px}.mb12{margin-bottom:12px}.mb16{margin-bottom:16px}
+.gap{display:flex;flex-direction:column;gap:10px}
+.divider{height:1px;background:var(--border);margin:14px 0}
+input.inp,select.inp,textarea.inp{background:var(--card2);border:1px solid var(--border2);border-radius:8px;color:var(--text);padding:8px 12px;font-size:12.5px;outline:none;transition:.16s;width:100%;font-family:'Inter',sans-serif}
+input.inp:focus,select.inp:focus,textarea.inp:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(0,200,150,.07)}
+input.inp::placeholder,textarea.inp::placeholder{color:var(--muted)}
+select.inp option{background:var(--card)}
+.lbl{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px;display:block}
+.fg{margin-bottom:14px}
+.bar{height:5px;background:var(--card2);border-radius:3px;overflow:hidden}
+.bar-fill{height:100%;border-radius:3px;transition:width .6s ease}
+.tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{text-align:left;padding:9px 12px;color:var(--muted);font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border)}
+td{padding:11px 12px;border-bottom:1px solid rgba(255,255,255,.035);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,.015)}
+.ch{position:relative}
+.ch.h160{height:160px}.ch.h220{height:220px}.ch.h260{height:260px}.ch.h280{height:280px}
+.tabs{display:flex;gap:3px;background:var(--card2);border-radius:8px;padding:3px;overflow-x:auto;margin-bottom:14px}
+.tab{padding:6px 12px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;transition:.15s;color:var(--muted);white-space:nowrap;border:none;background:none}
+.tab.on{background:var(--card);color:var(--text);border:1px solid var(--border)}
+.age{display:inline-flex;align-items:center;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
+.age-g{background:rgba(0,200,150,.1);color:var(--green)}
+.age-a{background:rgba(245,166,35,.1);color:var(--amber)}
+.age-r{background:rgba(232,69,69,.1);color:var(--red)}
+.dot-live{width:7px;height:7px;border-radius:50%;background:var(--green);display:inline-block;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+.stats{display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.stat{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;flex:1;min-width:130px;position:relative;overflow:hidden;transition:.18s}
+.stat:hover{border-color:var(--border2);transform:translateY(-1px)}
+.stat-lbl{font-size:10.5px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px}
+.stat-val{font-family:'Space Grotesk',sans-serif;font-weight:700;line-height:1}
+.stat-sub{font-size:11px;margin-top:5px;display:flex;align-items:center;gap:4px}
+.stat-ic{position:absolute;top:14px;right:14px;width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px}
+.ic-g{background:rgba(0,200,150,.12);color:var(--green)}
+.ic-b{background:rgba(76,110,245,.12);color:var(--blue)}
+.ic-a{background:rgba(245,166,35,.12);color:var(--amber)}
+.ic-r{background:rgba(232,69,69,.12);color:var(--red)}
+.ic-v{background:rgba(139,92,246,.12);color:var(--violet)}
+
+.tl{padding-left:22px;position:relative}
+.tl::before{content:'';position:absolute;left:7px;top:10px;bottom:10px;width:1px;background:var(--border)}
+.tl-item{position:relative;margin-bottom:18px}
+.tl-dot{position:absolute;left:-18px;top:4px;width:11px;height:11px;border-radius:50%;border:2px solid var(--surf)}
+.tl-when{font-size:10.5px;color:var(--muted);margin-bottom:3px}
+.tl-what{font-size:13px;font-weight:600;margin-bottom:2px}
+.tl-who{font-size:11.5px;color:var(--muted)}
+
+.rank-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)}
+.rank-row:last-child{border-bottom:none}
+.rank-n{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:800;flex-shrink:0}
+.r1{background:linear-gradient(135deg,#f5a623,#d97706);color:#fff}
+.r2{background:linear-gradient(135deg,#94a3b8,#64748b);color:#fff}
+.r3{background:linear-gradient(135deg,#cd7c2f,#92400e);color:#fff}
+.r0{background:var(--card2);color:var(--muted)}
+
+.dcard{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;cursor:pointer;transition:.18s;display:flex;flex-direction:column}
+.dcard:hover{border-color:rgba(0,200,150,.3);transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.2)}
+.dcard-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px}
+.dcard-icon{width:46px;height:46px;background:var(--card2);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:22px}
+.dcard-brand{font-size:9.5px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px}
+.dcard-model{font-size:14px;font-weight:700;margin-bottom:5px}
+.dcard-specs{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px}
+.chip{background:var(--card2);padding:2px 7px;border-radius:4px;font-size:10.5px;color:var(--muted)}
+.dcard-foot{display:flex;align-items:center;justify-content:space-between;margin-top:auto}
+.dcard-price{font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:700;color:var(--green)}
+.dcard-holder{font-size:10.5px;color:var(--muted);margin-top:6px}
+
+.rcard{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;border-left:3px solid var(--red)}
+.rcard.warn{border-left-color:var(--amber)}.rcard.done{border-left-color:var(--green)}
+.rcard-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;gap:10px}
+.rcard-meta{display:flex;flex-wrap:wrap;gap:12px;font-size:11.5px;color:var(--muted);margin-bottom:10px}
+
+.receipt{background:#fff;color:#1a1a1a;border-radius:10px;padding:22px;max-width:320px;font-family:'Inter',sans-serif;font-size:12px}
+.rh-name{font-size:14px;font-weight:800;text-align:center;letter-spacing:-.3px}
+.rh-addr{font-size:10.5px;color:#666;text-align:center;margin-top:3px}
+.rh-nr{background:#f4f4f4;padding:5px;border-radius:4px;text-align:center;font-size:10.5px;font-weight:700;margin-top:9px}
+.r-sep{border:none;border-top:1px dashed #ddd;margin:12px 0}
+.r-row{display:flex;justify-content:space-between;margin-bottom:5px}
+.r-total{display:flex;justify-content:space-between;font-size:15px;font-weight:800;border-top:1px dashed #ddd;padding-top:11px;margin-top:8px}
+.stamp{text-align:center;margin-top:16px;padding-top:14px;border-top:1px solid #eee}
+.stamp-ring{width:64px;height:64px;border:2.5px solid #009e78;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;margin:0 auto 7px;font-size:8.5px;font-weight:700;color:#009e78;line-height:1.3;text-align:center}
+
+.notif-p{position:fixed;top:var(--th);right:0;width:320px;background:var(--surf);border-left:1px solid var(--border);border-bottom:1px solid var(--border);border-radius:0 0 0 14px;z-index:300;transform:translateX(110%);transition:.25s ease;max-height:78vh;overflow-y:auto}
+.notif-p.open{transform:translateX(0)}
+.ni{padding:13px 15px;border-bottom:1px solid var(--border);cursor:pointer;transition:.14s}
+.ni:hover{background:var(--card)}.ni.unread{border-left:2.5px solid var(--green)}
+.ni-title{font-size:12.5px;font-weight:600;margin-bottom:2px}
+.ni-desc{font-size:11.5px;color:var(--muted)}.ni-time{font-size:10.5px;color:var(--muted);margin-top:3px}
+
+.d-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(3px);z-index:400;display:none}
+.d-overlay.open{display:block}
+.d-panel{position:fixed;top:0;right:0;width:420px;height:100vh;background:var(--surf);border-left:1px solid var(--border);z-index:401;overflow-y:auto;transform:translateX(100%);transition:.28s ease}
+.d-panel.open{transform:translateX(0)}
+.dp-hd{padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--surf);z-index:1}
+.dp-hd h3{font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:700}
+.dp-x{background:var(--card);border:1px solid var(--border);border-radius:7px;color:var(--muted);width:30px;height:30px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;transition:.14s}
+.dp-x:hover{color:var(--text)}
+.dp-body{padding:20px}
+
+.mwrap{position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);z-index:500;display:none;align-items:center;justify-content:center;padding:14px}
+.mwrap.open{display:flex}
+.modal{background:var(--surf);border:1px solid var(--border2);border-radius:16px;width:100%;max-width:500px;max-height:88vh;overflow-y:auto}
+.m-hd{padding:18px 22px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--surf)}
+.m-hd h3{font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:700}
+.m-x{background:none;border:none;color:var(--muted);font-size:17px;cursor:pointer;padding:3px}
+.m-x:hover{color:var(--text)}
+.m-body{padding:20px}.m-foot{padding:14px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:9px;flex-wrap:wrap}
+
+.wf{display:flex;gap:0;margin-bottom:20px;overflow-x:auto}
+.wf-step{display:flex;align-items:center;flex-shrink:0}
+.wf-num{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;border:2px solid var(--border2);color:var(--muted);transition:.2s;flex-shrink:0}
+.wf-num.done{background:var(--green);border-color:var(--green);color:#0a1a14}
+.wf-num.active{background:var(--blue);border-color:var(--blue);color:#fff}
+.wf-lbl{font-size:11px;font-weight:600;color:var(--muted);margin-left:6px;white-space:nowrap}
+.wf-lbl.done,.wf-lbl.active{color:var(--text)}
+.wf-line{width:28px;height:2px;background:var(--border);margin:0 4px;flex-shrink:0}
+.wf-line.done{background:var(--green)}
+
+#mapSvg path{fill:var(--card2);stroke:var(--border2);stroke-width:.8;cursor:pointer;transition:.18s}
+#mapSvg path:hover{fill:rgba(0,200,150,.25)}
+#mapSvg path.sel{fill:rgba(0,200,150,.35);stroke:var(--green)}
+.map-tt{position:absolute;background:var(--card);border:1px solid var(--border2);border-radius:8px;padding:8px 12px;font-size:12px;pointer-events:none;z-index:50;display:none;white-space:nowrap}
+
+.fp{display:flex;align-items:center;gap:11px;padding:12px;background:var(--card2);border-radius:8px;border:1px solid var(--border);margin-bottom:8px;cursor:pointer;transition:.16s}
+.fp:hover{border-color:var(--border2)}
+.fp-logo{width:38px;height:38px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;flex-shrink:0}
+
+.cmd{background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:14px;cursor:pointer;transition:.17s;text-align:center}
+.cmd:hover{border-color:var(--border2);background:var(--card);transform:translateY(-2px)}
+.cmd i{font-size:22px;display:block;margin-bottom:7px}
+.cmd span{font-size:12px;font-weight:600;display:block}
+.cmd-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px}
+
+.sp{position:absolute;top:100%;left:0;right:0;background:var(--surf);border:1px solid var(--border2);border-radius:10px;margin-top:5px;z-index:200;display:none;max-height:340px;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,.4)}
+.sp.open{display:block}
+.sr{padding:11px 14px;border-bottom:1px solid var(--border);cursor:pointer;transition:.14s}
+.sr:hover{background:var(--card2)}
+.sr-tag{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;margin-bottom:3px;color:var(--muted)}
+.sr-title{font-size:13px;font-weight:600}.sr-sub{font-size:11px;color:var(--muted)}
+
+.sb-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:190}
+
+/* permission gate banner */
+.perm-banner{background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.22);border-radius:10px;padding:11px 14px;font-size:12px;color:var(--amber);display:flex;align-items:center;gap:9px;margin-bottom:16px}
+.perm-banner i{flex-shrink:0}
+
+/* security widget */
+.sec-row{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--border)}
+.sec-row:last-child{border-bottom:none}
+.toggle{width:38px;height:21px;background:var(--card2);border-radius:11px;position:relative;cursor:pointer;transition:.2s;border:1px solid var(--border2);flex-shrink:0}
+.toggle.on{background:var(--green)}
+.toggle::after{content:'';position:absolute;top:1px;left:1px;width:17px;height:17px;background:#fff;border-radius:50%;transition:.2s}
+.toggle.on::after{transform:translateX(17px)}
+
+@media(max-width:800px){
+  .sb{transform:translateX(-100%)}.sb.open{transform:translateX(0)}
+  .sb-overlay.on{display:block}
+  .main{margin-left:0}.top-menu{display:block}
+  .sbar{display:none}.pg{padding:14px}
+  .g4{grid-template-columns:repeat(2,1fr)}
+  .g3{grid-template-columns:repeat(2,1fr)}
+  .g2{grid-template-columns:1fr}
+  .d-panel{width:100%}.notif-p{width:100%}
+  .session-pill{display:none}
+  #syncPill{display:none}
+}
+@media(max-width:480px){.g4,.g3,.g2{grid-template-columns:1fr}}
+.fab{position:fixed;bottom:20px;right:20px;width:42px;height:42px;background:linear-gradient(135deg,var(--green),var(--green2));border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:50;box-shadow:0 4px 18px rgba(0,200,150,.32);border:none;color:#0a1a14;font-size:15px;transition:.18s}
+.fab:hover{transform:scale(1.1)}
+#toast{position:fixed;bottom:70px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--card);border:1px solid var(--border2);border-radius:10px;padding:10px 18px;font-size:13px;font-weight:600;z-index:900;opacity:0;transition:.3s;white-space:nowrap;pointer-events:none;max-width:90vw;overflow:hidden;text-overflow:ellipsis}
+</style>
+</head>
+<body>
+<div id="splash">
+  <div class="sp-mark">M</div>
+  <div class="sp-name">Monalisa Stock ERP</div>
+  <div class="sp-tag">Stock · Sales · Recovery · Uganda</div>
+  <div class="sp-track"><div class="sp-bar"></div></div>
+  <div class="sp-hint mt8">Checking your session...</div>
+</div>
+
+<!-- ============ LOGIN SCREEN ============ -->
+<div id="loginScreen">
+  <div class="login-wrap">
+    <div class="login-side">
+      <div class="login-brand">
+        <div class="login-brand-mark">M</div>
+        <h1>Run your phone<br>business properly.</h1>
+        <p>Monalisa Stock ERP tracks every handset from the day it lands in your warehouse to the day it's paid off, sold, or recovered from the field.</p>
+        <div class="login-feature"><i class="fas fa-fingerprint"></i><div><b>Every login is logged</b><span>Device, time and location recorded for every user, every session</span></div></div>
+        <div class="login-feature"><i class="fas fa-sitemap"></i><div><b>Stock only moves downward</b><span>Admins allocate to managers, managers to teams, teams to agents — never sideways without approval</span></div></div>
+        <div class="login-feature"><i class="fas fa-bell"></i><div><b>WhatsApp and email alerts</b><span>Aged stock and recovery cases reach Monalisa directly, in real time</span></div></div>
+      </div>
+    </div>
+    <div class="login-form-side">
+      <div class="login-box">
+        <h2>Sign in</h2>
+        <div class="sub" id="loginSub">Enter your phone number and password, or pick a demo account below.</div>
+        <div class="login-err" id="loginErr"><i class="fas fa-circle-exclamation"></i><span id="loginErrText">Incorrect phone number or password.</span></div>
+
+        <div class="login-field">
+          <label>Phone number</label>
+          <div class="login-input-wrap">
+            <i class="fas fa-phone lead"></i>
+            <input type="text" class="login-input" id="loginPhone" placeholder="+256 7XX XXX XXX" autocomplete="off">
+          </div>
+        </div>
+        <div class="login-field">
+          <label>Password</label>
+          <div class="login-input-wrap">
+            <i class="fas fa-lock lead"></i>
+            <input type="password" class="login-input" id="loginPass" placeholder="Enter your password" autocomplete="off" onkeydown="if(event.key==='Enter')attemptLogin()">
+            <button class="pw-toggle" onclick="togglePw()"><i class="fas fa-eye" id="pwIcon"></i></button>
+          </div>
+        </div>
+        <button class="login-btn" id="loginBtn" onclick="attemptLogin()"><i class="fas fa-arrow-right-to-bracket"></i><span id="loginBtnText">Sign in</span></button>
+
+        <div class="login-divider">or continue as a demo user</div>
+        <div class="demo-users" id="demoUsers"></div>
+
+        <div class="login-security-note"><i class="fas fa-shield-halved"></i><span>This is a closed system. New accounts can only be created by the Chief Executive Officer or an Administrator — there is no public sign-up.</span></div>
+        <div class="login-foot">Monalisa Tech Solutions &middot; Kampala, Uganda</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SESSION LOCK SCREEN ============ -->
+<div id="lockScreen">
+  <div class="lock-box">
+    <div class="lock-icon"><i class="fas fa-clock"></i></div>
+    <h3>Session timed out</h3>
+    <p>For security, we signed you out after a period of inactivity. Please enter your password to continue, or sign in again.</p>
+    <input type="password" class="login-input" id="unlockPass" placeholder="Enter your password" style="margin-bottom:12px;padding-left:14px">
+    <button class="login-btn" onclick="unlockSession()"><i class="fas fa-unlock"></i> Unlock session</button>
+    <div class="xs muted mt12" style="cursor:pointer" onclick="forceLogout()">Sign in as a different user</div>
+  </div>
+</div>
+<div class="notif-p" id="notifPanel">
+  <div style="padding:14px 15px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+    <span style="font-weight:700;font-size:13px">What's happening</span>
+    <span class="xs green" style="cursor:pointer;font-weight:600" onclick="clearNotifs()">Clear all</span>
+  </div>
+  <div class="ni unread"><div class="ni-title">⚠️ Aged stock alert</div><div class="ni-desc">Samsung A55 5G with Agent Nalwoga — 32 days and counting</div><div class="ni-time">4 minutes ago</div></div>
+  <div class="ni unread"><div class="ni-title">💰 Financed sale confirmed</div><div class="ni-desc">Tecno Spark 20 Pro sold via Watu Credit to Mukasa David, Kampala</div><div class="ni-time">18 minutes ago</div></div>
+  <div class="ni unread"><div class="ni-title">📦 Allocation sent</div><div class="ni-desc">15 units from CEO stock to Manager Kato Peter. Awaiting confirmation.</div><div class="ni-time">1 hour ago</div></div>
+  <div class="ni"><div class="ni-title">🔐 New admin created</div><div class="ni-desc">CEO Monalisa added Namugga Sarah as Administrator</div><div class="ni-time">2 hours ago</div></div>
+  <div class="ni"><div class="ni-title">✅ Recovery complete</div><div class="ni-desc">Infinix Hot 40i recovered from Agent Ssempijja and returned to CEO inventory</div><div class="ni-time">3 hours ago</div></div>
+  <div class="ni"><div class="ni-title">🏆 Commission milestone</div><div class="ni-desc">Agent Apio Grace crossed UGX 500,000 in June commissions</div><div class="ni-time">Yesterday</div></div>
+</div>
+
+<div class="d-overlay" id="dOverlay" onclick="closeDetail()"></div>
+<div class="d-panel" id="dPanel">
+  <div class="dp-hd"><h3 id="dp-title">Device Detail</h3><div class="dp-x" onclick="closeDetail()"><i class="fas fa-times"></i></div></div>
+  <div class="dp-body" id="dp-body"></div>
+</div>
+
+<div class="sb-overlay" id="sbOverlay" onclick="closeSb()"></div>
+
+<div id="app">
+  <aside class="sb" id="sb">
+    <div class="sb-logo">
+      <div class="sb-mark">M</div>
+      <div class="sb-brand">Monalisa Stock ERP <small>Smart Inventory Tracking</small></div>
+    </div>
+
+    <div class="sb-sec">Main</div>
+    <div class="nav on" id="nav-dashboard" onclick="go('dashboard')"><i class="fas fa-th-large"></i>Dashboard</div>
+    <div class="nav" id="nav-ceo" onclick="go('ceo')"><i class="fas fa-crown"></i>CEO Command Center</div>
+
+    <div class="sb-sec">Inventory</div>
+    <div class="nav" id="nav-inventory" onclick="go('inventory')"><i class="fas fa-mobile-alt"></i>Inventory <span class="pip g">847</span></div>
+    <div class="nav" id="nav-warehouses" onclick="go('warehouses')"><i class="fas fa-warehouse"></i>Warehouses</div>
+    <div class="nav" id="nav-allocation" onclick="go('allocation')"><i class="fas fa-exchange-alt"></i>Stock Allocation <span class="pip a">5</span></div>
+
+    <div class="sb-sec">Sales</div>
+    <div class="nav" id="nav-sales" onclick="go('sales')"><i class="fas fa-receipt"></i>Sales</div>
+    <div class="nav" id="nav-customers" onclick="go('customers')"><i class="fas fa-users"></i>Customers</div>
+    <div class="nav" id="nav-financing" onclick="go('financing')"><i class="fas fa-handshake"></i>Financing Integration</div>
+
+    <div class="sb-sec">Field Ops</div>
+    <div class="nav" id="nav-recovery" onclick="go('recovery')"><i class="fas fa-shield-alt"></i>Recovery <span class="pip">12</span></div>
+    <div class="nav" id="nav-commissions" onclick="go('commissions')"><i class="fas fa-coins"></i>Commissions</div>
+    <div class="nav" id="nav-performance" onclick="go('performance')"><i class="fas fa-chart-line"></i>Performance</div>
+
+    <div class="sb-sec">Intelligence</div>
+    <div class="nav" id="nav-reports" onclick="go('reports')"><i class="fas fa-file-alt"></i>Reports</div>
+    <div class="nav" id="nav-uganda" onclick="go('uganda')"><i class="fas fa-map-marked-alt"></i>Uganda Analytics</div>
+
+    <div class="sb-sec">Admin</div>
+    <div class="nav" id="nav-users" onclick="go('users')"><i class="fas fa-user-shield"></i>Users</div>
+    <div class="nav" id="nav-auditlogs" onclick="go('auditlogs')"><i class="fas fa-history"></i>Audit Logs</div>
+    <div class="nav" id="nav-security" onclick="go('security')"><i class="fas fa-shield-halved"></i>Security Center</div>
+    <div class="nav" id="nav-integrations" onclick="go('integrations')"><i class="fas fa-plug"></i>Integrations</div>
+    <div class="nav" id="nav-settings" onclick="go('settings')"><i class="fas fa-cog"></i>Settings</div>
+
+    <div class="sb-foot">
+      <div class="logout-menu" id="logoutMenu">
+        <div class="logout-item" onclick="go('settings');closeLogoutMenu()"><i class="fas fa-user"></i>My profile</div>
+        <div class="logout-item" onclick="go('security');closeLogoutMenu()"><i class="fas fa-shield-halved"></i>Security</div>
+        <div class="logout-item danger" onclick="doLogout()"><i class="fas fa-arrow-right-from-bracket"></i>Sign out</div>
+      </div>
+      <div class="sb-user" id="sbUser" onclick="toggleLogoutMenu()">
+        <div class="ava ava-g" id="sbAva">CM</div>
+        <div style="flex:1;min-width:0">
+          <div class="u-name" id="sbName">Monalisa C.</div>
+          <div class="u-role" id="sbRole">Chief Executive Officer</div>
+        </div>
+        <i class="fas fa-ellipsis-v muted xs"></i>
+      </div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="top">
+      <button class="top-menu" onclick="toggleSb()" aria-label="Open menu"><i class="fas fa-bars"></i></button>
+      <div class="top-title" id="pageTitle">Dashboard</div>
+      <div style="position:relative;flex:1;max-width:300px">
+        <div class="sbar">
+          <i class="fas fa-search muted" style="font-size:12px"></i>
+          <input id="sInput" placeholder="Search IMEI, customer, receipt..." aria-label="Search inventory, customers, and receipts" oninput="doSearch(this.value)" onfocus="if(this.value)showSP()" onblur="setTimeout(hideSP,200)">
+        </div>
+        <div class="sp" id="searchPanel"></div>
+      </div>
+      <div class="session-pill" id="syncPill" style="background:rgba(76,110,245,.08);border-color:rgba(76,110,245,.18);color:var(--blue)"><i class="fas fa-cloud-arrow-up" id="syncIcon" style="font-size:10px"></i><span id="syncStatus">Connecting...</span></div>
+      <div class="session-pill" id="sessionPill"><i class="fas fa-circle" style="font-size:6px"></i><span id="sessionTimer">Session active</span></div>
+      <div class="top-acts">
+        <div class="ico" onclick="toggleNotif()" role="button" tabindex="0" aria-label="Notifications" onkeydown="if(event.key==='Enter')toggleNotif()"><i class="fas fa-bell"></i><span class="dot"></span></div>
+        <div class="ico" onclick="toggleFS()" role="button" tabindex="0" aria-label="Toggle full screen" onkeydown="if(event.key==='Enter')toggleFS()"><i class="fas fa-expand"></i></div>
+        <div class="ico" id="roleIco" title="Current role" role="img" aria-label="Current role indicator"><i class="fas fa-crown" style="color:var(--amber)"></i></div>
+      </div>
+    </div>
+    <div class="pg on" id="pg-dashboard">
+      <div style="background:linear-gradient(110deg,var(--card) 0%,rgba(0,200,150,.04) 60%,rgba(76,110,245,.04) 100%);border:1px solid var(--border);border-radius:14px;padding:22px;margin-bottom:18px;position:relative;overflow:hidden">
+        <div style="position:absolute;top:-30px;right:-30px;width:180px;height:180px;background:radial-gradient(circle,rgba(0,200,150,.07),transparent 70%);pointer-events:none"></div>
+        <div class="xs muted mb4" style="display:flex;align-items:center;gap:6px"><span class="dot-live"></span>Live overview</div>
+        <div style="font-family:'Space Grotesk',sans-serif;font-size:21px;font-weight:700;margin-bottom:4px" id="dashGreet">Good morning, CEO Monalisa</div>
+        <div class="sm muted">You have <span style="color:var(--amber);font-weight:600">3 alerts</span> that need attention today.</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px">
+          <span style="background:var(--card2);border:1px solid var(--border);padding:5px 11px;border-radius:7px;font-size:11.5px;color:var(--muted);display:inline-flex;align-items:center;gap:5px"><i class="fas fa-calendar-alt"></i><span id="dashDate"></span></span>
+          <span style="background:rgba(232,69,69,.1);border:1px solid rgba(232,69,69,.2);padding:5px 11px;border-radius:7px;font-size:11.5px;color:var(--red);display:inline-flex;align-items:center;gap:5px;cursor:pointer" onclick="go('recovery')"><i class="fas fa-exclamation-triangle"></i>47 units aged 21+ days</span>
+          <span style="background:rgba(0,200,150,.1);border:1px solid rgba(0,200,150,.2);padding:5px 11px;border-radius:7px;font-size:11.5px;color:var(--green);display:inline-flex;align-items:center;gap:5px"><i class="fas fa-check-circle"></i>Recovery rate 84.6%</span>
+        </div>
+      </div>
+
+      <div class="stats">
+        <div class="stat" style="border-top:2px solid var(--green)">
+          <div class="stat-ic ic-g"><i class="fas fa-mobile-alt"></i></div>
+          <div class="stat-lbl">Total stock</div>
+          <div class="stat-val" style="font-size:30px">847</div>
+          <div class="stat-sub green"><i class="fas fa-arrow-up"></i>34 added this week</div>
+        </div>
+        <div class="stat" style="border-top:2px solid var(--blue)">
+          <div class="stat-ic ic-b"><i class="fas fa-coins"></i></div>
+          <div class="stat-lbl">Stock value</div>
+          <div class="stat-val" style="font-size:21px">UGX 847M</div>
+          <div class="stat-sub blue"><i class="fas fa-arrow-up"></i>+12% month-on-month</div>
+        </div>
+        <div class="stat" style="border-top:2px solid var(--amber);flex:1.4">
+          <div class="stat-ic ic-a"><i class="fas fa-chart-bar"></i></div>
+          <div class="stat-lbl">Revenue — June</div>
+          <div class="stat-val" style="font-size:26px">UGX 312M</div>
+          <div class="stat-sub amber"><i class="fas fa-arrow-up"></i>+8.4% vs May</div>
+          <div class="bar mt8"><div class="bar-fill" style="width:78%;background:var(--amber)"></div></div>
+        </div>
+        <div class="stat" style="border-top:2px solid var(--red)">
+          <div class="stat-ic ic-r"><i class="fas fa-clock"></i></div>
+          <div class="stat-lbl">Aged 21+ days</div>
+          <div class="stat-val red" style="font-size:30px">47</div>
+          <div class="stat-sub red"><i class="fas fa-arrow-up"></i>5 more than last week</div>
+        </div>
+      </div>
+
+      <div class="g2 mb16" style="grid-template-columns:3fr 2fr">
+        <div class="card">
+          <div class="between mb16"><div><div class="hd2" style="margin:0">Sales performance</div><div class="xs muted mt4">Monthly revenue in UGX millions</div></div></div>
+          <div class="ch h220"><canvas id="cSales"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="hd2">Brand split</div>
+          <div class="xs muted mb12">Units currently in stock</div>
+          <div class="ch" style="height:190px"><canvas id="cBrand"></canvas></div>
+        </div>
+      </div>
+
+      <div class="g2 mb16" style="grid-template-columns:2fr 3fr">
+        <div class="card">
+          <div class="hd"><h2 style="font-size:14px">Top agents, June</h2><span class="badge b-g"><span class="dot-live" style="width:5px;height:5px;margin-right:4px"></span>Live</span></div>
+          <div class="rank-row"><div class="rank-n r1">1</div><div style="flex:1"><div class="bold sm">Apio Grace</div><div class="xs muted">Gulu</div></div><div style="text-align:right"><div class="bold green sm">UGX 18.2M</div><div class="xs muted">24 units</div></div></div>
+          <div class="rank-row"><div class="rank-n r2">2</div><div style="flex:1"><div class="bold sm">Mukasa Ronald</div><div class="xs muted">Kampala Nakawa</div></div><div style="text-align:right"><div class="bold green sm">UGX 16.5M</div><div class="xs muted">21 units</div></div></div>
+          <div class="rank-row"><div class="rank-n r3">3</div><div style="flex:1"><div class="bold sm">Nakato Sarah</div><div class="xs muted">Jinja East</div></div><div style="text-align:right"><div class="bold sm">UGX 14.9M</div><div class="xs muted">19 units</div></div></div>
+          <div class="rank-row"><div class="rank-n r0">4</div><div style="flex:1"><div class="bold sm">Otim Charles</div><div class="xs muted">Mbale</div></div><div style="text-align:right"><div class="bold sm">UGX 12.1M</div><div class="xs muted">16 units</div></div></div>
+          <div class="rank-row"><div class="rank-n r0">5</div><div style="flex:1"><div class="bold sm">Namukasa Lydia</div><div class="xs muted">Mbarara</div></div><div style="text-align:right"><div class="bold sm">UGX 11.4M</div><div class="xs muted">15 units</div></div></div>
+        </div>
+        <div class="card">
+          <div class="hd"><h2 style="font-size:14px">Stock sitting too long</h2><span class="badge b-r">47 units</span></div>
+          <div style="display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap">
+            <span class="xs" style="display:flex;align-items:center;gap:5px"><span style="width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block"></span>Under 10 days</span>
+            <span class="xs" style="display:flex;align-items:center;gap:5px"><span style="width:8px;height:8px;border-radius:50%;background:var(--amber);display:inline-block"></span>10 to 20</span>
+            <span class="xs" style="display:flex;align-items:center;gap:5px"><span style="width:8px;height:8px;border-radius:50%;background:var(--red);display:inline-block"></span>21+ days — act now</span>
+          </div>
+          <div class="ch h160"><canvas id="cAge"></canvas></div>
+          <div class="tw mt12">
+            <table>
+              <thead><tr><th>Device</th><th>IMEI</th><th>With</th><th>Days</th></tr></thead>
+              <tbody>
+                <tr style="cursor:pointer" onclick="openDetail('Samsung Galaxy A55 5G','357123459871234','Agent Nalwoga Fatuma','32','Kamwokya, Kampala')"><td class="bold">Samsung A55 5G</td><td class="mono">357123...1234</td><td>Agent Nalwoga</td><td><span class="age age-r">32d</span></td></tr>
+                <tr style="cursor:pointer" onclick="openDetail('Tecno Camon 20','352987650123456','TL Ssali Moses','27','Gulu North')"><td class="bold">Tecno Camon 20</td><td class="mono">352987...3456</td><td>TL Ssali</td><td><span class="age age-r">27d</span></td></tr>
+                <tr style="cursor:pointer" onclick="openDetail('Infinix Note 30','359001234567890','Manager Kato Peter','18','Kampala Central')"><td class="bold">Infinix Note 30</td><td class="mono">359001...7890</td><td>Mgr Kato</td><td><span class="age age-a">18d</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <button class="btn btn-o btn-sm mt12" style="width:100%" onclick="go('recovery')">See all aged stock <i class="fas fa-arrow-right"></i></button>
+        </div>
+      </div>
+
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;display:flex;flex-wrap:wrap;gap:0">
+        <div style="flex:1;min-width:120px;padding:0 16px;border-right:1px solid var(--border);text-align:center"><div class="xs muted mb4">Recovery rate</div><div class="bold lg green">84.6%</div><div class="bar mt6"><div class="bar-fill" style="width:84.6%;background:var(--green)"></div></div></div>
+        <div style="flex:1;min-width:120px;padding:0 16px;border-right:1px solid var(--border);text-align:center"><div class="xs muted mb4">Financed sales</div><div class="bold lg blue">43%</div><div class="bar mt6"><div class="bar-fill" style="width:43%;background:var(--blue)"></div></div></div>
+        <div style="flex:1;min-width:120px;padding:0 16px;border-right:1px solid var(--border);text-align:center"><div class="xs muted mb4">Cash sales</div><div class="bold lg amber">57%</div><div class="bar mt6"><div class="bar-fill" style="width:57%;background:var(--amber)"></div></div></div>
+        <div style="flex:1;min-width:120px;padding:0 16px;text-align:center"><div class="xs muted mb4">Active branches</div><div class="bold lg">8 of 10</div><div class="bar mt6"><div class="bar-fill" style="width:80%;background:var(--violet)"></div></div></div>
+      </div>
+    </div>
+    <div class="pg" id="pg-ceo">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:20px">
+        <div style="width:48px;height:48px;background:linear-gradient(135deg,rgba(245,166,35,.2),rgba(245,166,35,.05));border:1px solid rgba(245,166,35,.3);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px">👑</div>
+        <div><div style="font-family:'Space Grotesk',sans-serif;font-size:20px;font-weight:700">Command Center</div><div class="xs muted mt4">Full system authority. Only the CEO can create or remove logins.</div></div>
+      </div>
+      <div class="g2 mb16">
+        <div>
+          <div class="card mb12">
+            <div class="hd2">Quick actions</div>
+            <div class="cmd-grid">
+              <div class="cmd" onclick="openM('mCreateUser')"><i class="fas fa-user-plus green"></i><span>Create login</span></div>
+              <div class="cmd" onclick="go('allocation')"><i class="fas fa-exchange-alt blue"></i><span>Override allocation</span></div>
+              <div class="cmd" onclick="go('users')"><i class="fas fa-user-slash red"></i><span>Suspend a user</span></div>
+              <div class="cmd" onclick="go('security')"><i class="fas fa-key amber"></i><span>Reset a password</span></div>
+              <div class="cmd" onclick="go('inventory')"><i class="fas fa-mobile-alt green"></i><span>Stock ownership</span></div>
+              <div class="cmd" onclick="go('reports')"><i class="fas fa-file-export" style="color:var(--violet)"></i><span>Exec reports</span></div>
+              <div class="cmd" onclick="go('auditlogs')"><i class="fas fa-history" style="color:#06b6d4"></i><span>Activity logs</span></div>
+              <div class="cmd" onclick="go('integrations')"><i class="fab fa-whatsapp" style="color:#25d366"></i><span>WhatsApp / Email</span></div>
+            </div>
+          </div>
+          <div class="card mb12">
+            <div class="between mb12"><div class="hd2" style="margin:0">Administrators</div><button class="btn btn-g btn-sm" onclick="openM('mCreateUser');presetRole('Administrator')"><i class="fas fa-plus"></i>Add admin</button></div>
+            <div class="xs muted mb12">Admins can allocate stock to managers, team leaders and shop owners, and can manage day-to-day operations — but only the CEO can create or delete logins.</div>
+            <div class="gap">
+              <div class="row card-sm" style="justify-content:space-between">
+                <div class="row"><div class="ava ava-p" style="width:34px;height:34px;font-size:12px">NS</div><div><div class="bold sm">Namugga Sarah</div><div class="xs muted">Operations Admin, Kampala HQ</div></div></div>
+                <span class="badge b-g">Active</span>
+              </div>
+              <div class="row card-sm" style="justify-content:space-between">
+                <div class="row"><div class="ava ava-p" style="width:34px;height:34px;font-size:12px">OT</div><div><div class="bold sm">Okello Timothy</div><div class="xs muted">Regional Admin, Eastern Uganda</div></div></div>
+                <span class="badge b-g">Active</span>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="hd2">Live activity today</div>
+            <div class="tl">
+              <div class="tl-item"><div class="tl-dot" style="background:var(--violet)"></div><div class="tl-when">08:15 AM</div><div class="tl-what">Admin Namugga Sarah logged in</div><div class="tl-who">Kampala HQ, Chrome on Windows</div></div>
+              <div class="tl-item"><div class="tl-dot" style="background:var(--green)"></div><div class="tl-when">08:31 AM</div><div class="tl-what">Manager Kato Peter logged in</div><div class="tl-who">Kampala, Chrome on Android</div></div>
+              <div class="tl-item"><div class="tl-dot" style="background:var(--blue)"></div><div class="tl-when">08:45 AM</div><div class="tl-what">8 units allocated to TL Ssali Moses</div><div class="tl-who">By Manager Kato Peter</div></div>
+              <div class="tl-item"><div class="tl-dot" style="background:var(--amber)"></div><div class="tl-when">09:02 AM</div><div class="tl-what">Sale recorded — Tecno Spark 20</div><div class="tl-who">Agent Apio Grace, Gulu, UGX 485,000</div></div>
+              <div class="tl-item"><div class="tl-dot" style="background:var(--red)"></div><div class="tl-when">09:18 AM</div><div class="tl-what">Recovery alert fired automatically</div><div class="tl-who">Samsung A15 — 24 days with Agent Ssempijja</div></div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="g2 mb12">
+            <div class="card-sm"><div class="xs muted mb4">Total users</div><div class="stat-val lg">96</div><div class="xs green mt4">3 new this month</div></div>
+            <div class="card-sm"><div class="xs muted mb4">CEO inventory</div><div class="stat-val lg">283</div><div class="xs muted mt4">Units in master stock</div></div>
+          </div>
+          <div class="card mb12">
+            <div class="hd2">Revenue by region</div>
+            <div class="ch h220"><canvas id="cRegion"></canvas></div>
+          </div>
+          <div class="card">
+            <div class="hd2">Inventory by manager</div>
+            <div class="tw">
+              <table>
+                <thead><tr><th>Manager</th><th>Units</th><th>Value (UGX)</th><th>Status</th></tr></thead>
+                <tbody>
+                  <tr><td class="bold">Kato Peter</td><td>124</td><td class="bold green">124,350,000</td><td><span class="badge b-g">Active</span></td></tr>
+                  <tr><td class="bold">Nakamya Judith</td><td>98</td><td class="bold green">89,250,000</td><td><span class="badge b-g">Active</span></td></tr>
+                  <tr><td class="bold">Ssebuliba Mark</td><td>76</td><td class="bold">71,800,000</td><td><span class="badge b-g">Active</span></td></tr>
+                  <tr><td class="bold">Abaasa Robert</td><td>52</td><td class="bold">48,400,000</td><td><span class="badge b-a">Review</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="pg" id="pg-inventory">
+      <div class="hd">
+        <h2>Inventory</h2>
+        <div class="row">
+          <select class="inp btn-sm" style="width:auto" id="invBrand" onchange="filterInv()"><option value="">All brands</option><option>Samsung</option><option>Tecno</option><option>Infinix</option><option>Itel</option><option>Redmi</option><option>Nokia</option><option>Oppo</option><option>Vivo</option></select>
+          <select class="inp btn-sm" style="width:auto" id="invAge" onchange="filterInv()"><option value="">All ages</option><option value="g">Under 10 days</option><option value="a">10 to 20 days</option><option value="r">21+ days</option></select>
+          <button class="btn btn-ghost btn-sm"><i class="fas fa-file-excel"></i>Export</button>
+          <button class="btn btn-g btn-sm" id="addStockBtn" onclick="openM('mAddDevice')"><i class="fas fa-plus"></i>Add devices</button>
+        </div>
+      </div>
+
+      <div class="perm-banner" id="invPermBanner" style="display:none">
+        <i class="fas fa-circle-info"></i><span id="invPermText"></span>
+      </div>
+
+      <div class="tabs" id="invTabs">
+        <button class="tab on" onclick="setTab(this,'invTabs');filterStatus('')">All stock (847)</button>
+        <button class="tab" onclick="setTab(this,'invTabs');filterStatus('ceo')">CEO stock (283)</button>
+        <button class="tab" onclick="setTab(this,'invTabs');filterStatus('allocated')">Allocated (564)</button>
+        <button class="tab" onclick="setTab(this,'invTabs');filterStatus('aged')">Aged 21+ (47)</button>
+      </div>
+      <div class="g4" id="deviceGrid" style="gap:12px;margin-bottom:20px"></div>
+      <div class="card">
+        <div class="between mb12"><div class="hd2" style="margin:0">Full IMEI register</div><span class="xs muted">Click any row to view history</span></div>
+        <div class="tw"><table><thead><tr><th>IMEI</th><th>Brand / Model</th><th>Specs</th><th>Buy price</th><th>Sell price</th><th>Holder</th><th>Age</th><th>Status</th></tr></thead><tbody id="invTbody"></tbody></table></div>
+      </div>
+    </div>
+    <div class="pg" id="pg-allocation">
+      <div class="hd"><h2>Stock Allocation</h2><button class="btn btn-g" id="newAllocBtn" onclick="openM('mAllocate')"><i class="fas fa-exchange-alt"></i>New allocation</button></div>
+
+      <div class="perm-banner" id="allocPermBanner" style="display:none"><i class="fas fa-circle-info"></i><span id="allocPermText"></span></div>
+
+      <div class="card mb16">
+        <div class="xs muted mb12">Who can allocate to whom</div>
+        <div class="g3">
+          <div class="card-sm" style="border-top:2px solid var(--amber)">
+            <div class="bold sm mb4"><i class="fas fa-crown amber"></i> CEO &amp; Administrators</div>
+            <div class="xs muted">Can allocate stock to Managers, Team Leaders, or Shop Owners directly from CEO master stock</div>
+          </div>
+          <div class="card-sm" style="border-top:2px solid var(--blue)">
+            <div class="bold sm mb4"><i class="fas fa-briefcase blue"></i> Managers &amp; Team Leaders</div>
+            <div class="xs muted">Can only allocate stock they've already received, and only down to Agents under them</div>
+          </div>
+          <div class="card-sm" style="border-top:2px solid var(--green)">
+            <div class="bold sm mb4"><i class="fas fa-user green"></i> Agents &amp; Shop Owners</div>
+            <div class="xs muted">Receive stock only. They sell it or return it — they cannot allocate onward to anyone</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb16">
+        <div class="xs muted mb12">How a stock allocation works end to end</div>
+        <div class="wf">
+          <div class="wf-step"><div class="wf-num done">1</div><div class="wf-lbl done">CEO/Admin selects units</div></div>
+          <div class="wf-line done"></div>
+          <div class="wf-step"><div class="wf-num done">2</div><div class="wf-lbl done">Allocates to Manager/TL/Shop</div></div>
+          <div class="wf-line done"></div>
+          <div class="wf-step"><div class="wf-num active">3</div><div class="wf-lbl active">Receiver confirms</div></div>
+          <div class="wf-line"></div>
+          <div class="wf-step"><div class="wf-num">4</div><div class="wf-lbl">Manager/TL sends to Agent</div></div>
+          <div class="wf-line"></div>
+          <div class="wf-step"><div class="wf-num">5</div><div class="wf-lbl">Agent confirms receipt</div></div>
+          <div class="wf-line"></div>
+          <div class="wf-step"><div class="wf-num">6</div><div class="wf-lbl">Agent sells or returns</div></div>
+        </div>
+      </div>
+
+      <div class="g2 mb16">
+        <div class="gap">
+          <div class="card" id="allocCard1" style="border-left:3px solid var(--amber)">
+            <div class="between mb8"><span class="bold sm">Allocation #ALW-2025-0087</span><span class="badge b-a" id="aStatus1">Awaiting confirmation</span></div>
+            <div class="xs muted mb8">From CEO Monalisa to Manager Kato Peter</div>
+            <div class="xs mb8">8 units: Tecno Camon 30 (x3), Samsung A15 (x3), Infinix Note 40 (x2)</div>
+            <div class="xs muted mb12">Sent 18 Jun 2025 at 07:45 AM</div>
+            <div class="row" id="aActions1">
+              <button class="btn btn-g btn-sm" onclick="confirmAlloc(1)">Confirm receipt</button>
+              <button class="btn btn-danger btn-sm">Reject</button>
+            </div>
+          </div>
+          <div class="card" id="allocCard2" style="border-left:3px solid var(--amber)">
+            <div class="between mb8"><span class="bold sm">Allocation #ALW-2025-0088</span><span class="badge b-a" id="aStatus2">Awaiting confirmation</span></div>
+            <div class="xs muted mb8">From Manager Kato to Agent Mukasa Ronald</div>
+            <div class="xs mb8">4 units: Redmi Note 13 Pro (x2), Nokia G60 (x2)</div>
+            <div class="xs muted mb12">Sent 18 Jun 2025 at 08:12 AM</div>
+            <div class="row" id="aActions2">
+              <button class="btn btn-g btn-sm" onclick="confirmAlloc(2)">Confirm receipt</button>
+              <button class="btn btn-danger btn-sm">Reject</button>
+            </div>
+          </div>
+          <div class="card" id="allocCard3" style="border-left:3px solid var(--amber)">
+            <div class="between mb8"><span class="bold sm">Allocation #ALW-2025-0089</span><span class="badge b-a" id="aStatus3">Awaiting confirmation</span></div>
+            <div class="xs muted mb8">From Admin Namugga Sarah to Shop Kibira Electronics</div>
+            <div class="xs mb8">6 units: Oppo A78 (x3), Vivo Y36 (x3)</div>
+            <div class="xs muted mb12">Sent 18 Jun 2025 at 09:05 AM</div>
+            <div class="row" id="aActions3">
+              <button class="btn btn-g btn-sm" onclick="confirmAlloc(3)">Confirm receipt</button>
+              <button class="btn btn-danger btn-sm">Reject</button>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="hd2">Recent movements</div>
+          <div class="tl">
+            <div class="tl-item"><div class="tl-dot" style="background:var(--green)"></div><div class="tl-when">18 Jun 2025, 08:45 AM</div><div class="tl-what">CEO to Manager Nakamya Judith</div><div class="tl-who">12 units, confirmed both sides</div></div>
+            <div class="tl-item"><div class="tl-dot" style="background:var(--green)"></div><div class="tl-when">17 Jun 2025, 03:22 PM</div><div class="tl-what">TL Ssali to Agent Apio Grace</div><div class="tl-who">6 units, confirmed</div></div>
+            <div class="tl-item"><div class="tl-dot" style="background:var(--blue)"></div><div class="tl-when">17 Jun 2025, 10:14 AM</div><div class="tl-what">Admin Okello Timothy to Shop Kibira</div><div class="tl-who">5 units, confirmed</div></div>
+            <div class="tl-item"><div class="tl-dot" style="background:var(--amber)"></div><div class="tl-when">16 Jun 2025, 02:11 PM</div><div class="tl-what">Transfer: Agent Mukasa to Agent Nakato</div><div class="tl-who">2 units, approved by manager</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="between mb12"><div class="hd2" style="margin:0">IMEI trail — Samsung Galaxy A55 5G</div><span class="badge b-r">32 days in field</span></div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>Move</th><th>From</th><th>To</th><th>Date</th><th>Reason</th><th>Confirmed</th><th>Days held</th></tr></thead>
+            <tbody>
+              <tr><td class="bold">#001</td><td>Supplier</td><td>CEO Stock</td><td>15 May 2025</td><td>Stock intake</td><td><span class="badge b-g">System</span></td><td>—</td></tr>
+              <tr><td class="bold">#002</td><td>CEO Stock</td><td>Manager Kato</td><td>20 May 2025</td><td>Allocation</td><td><span class="badge b-g">Confirmed</span></td><td>5</td></tr>
+              <tr><td class="bold">#003</td><td>Manager Kato</td><td>TL Ssali Moses</td><td>22 May 2025</td><td>Team allocation</td><td><span class="badge b-g">Confirmed</span></td><td>2</td></tr>
+              <tr><td class="bold">#004</td><td>TL Ssali</td><td>Agent Nalwoga F.</td><td>25 May 2025</td><td>Field assignment</td><td><span class="badge b-g">Confirmed</span></td><td>3</td></tr>
+              <tr style="background:rgba(232,69,69,.04)"><td class="bold red">#005</td><td colspan="2" class="red bold">Still with Agent Nalwoga — 32 days</td><td>25 May 2025</td><td>Pending sale</td><td><span class="badge b-r">Aged</span></td><td><span class="bold red">32</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="pg" id="pg-sales">
+      <div class="hd"><h2>Sales</h2>
+        <div class="row">
+          <button class="btn btn-ghost btn-sm"><i class="fas fa-file-pdf"></i>Export PDF</button>
+          <button class="btn btn-g" onclick="openM('mNewSale')"><i class="fas fa-plus"></i>Record a sale</button>
+        </div>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="stat-ic ic-g"><i class="fas fa-sun"></i></div><div class="stat-lbl">Today</div><div class="stat-val" style="font-size:21px">UGX 4.2M</div><div class="stat-sub green">7 transactions</div></div>
+        <div class="stat"><div class="stat-ic ic-b"><i class="fas fa-calendar-week"></i></div><div class="stat-lbl">This week</div><div class="stat-val" style="font-size:21px">UGX 22.8M</div><div class="stat-sub blue">+12% vs last week</div></div>
+        <div class="stat" style="flex:1.5"><div class="stat-ic ic-a"><i class="fas fa-calendar-alt"></i></div><div class="stat-lbl">June total</div><div class="stat-val" style="font-size:26px">UGX 312M</div><div class="stat-sub amber">348 units sold</div><div class="bar mt8"><div class="bar-fill" style="width:78%;background:linear-gradient(90deg,var(--amber),var(--green))"></div></div></div>
+      </div>
+      <div class="g2 mb16">
+        <div class="card">
+          <div class="hd2">Recent transactions</div>
+          <div class="tw">
+            <table>
+              <thead><tr><th>Receipt</th><th>Customer</th><th>Device</th><th>Type</th><th>Agent</th><th>Amount</th></tr></thead>
+              <tbody>
+                <tr style="cursor:pointer" onclick="loadReceiptInto('RCP-20250618-0047','Mukasa David','+256 772 345 678','CM98765432BC','Apio Grace','Tecno','Spark 20 Pro','8GB / 128GB','Magic Skin White','352001234567890','Financed — Watu Credit',485000)"><td class="bold green xs">#RCP-20250618-0047</td><td>Mukasa David</td><td>Tecno Spark 20 Pro</td><td><span class="badge b-b">Finance</span></td><td>Apio Grace</td><td class="bold">485,000</td></tr>
+                <tr style="cursor:pointer" onclick="loadReceiptInto('RCP-20250618-0046','Namulondo Joyce','+256 701 234 567','NJ72345678AB','Mukasa Ronald','Samsung','Galaxy A15','4GB / 128GB','Light Blue','358001234567890','Cash',620000)"><td class="bold green xs">#RCP-20250618-0046</td><td>Namulondo Joyce</td><td>Samsung A15</td><td><span class="badge b-g">Cash</span></td><td>Mukasa Ronald</td><td class="bold">620,000</td></tr>
+                <tr style="cursor:pointer" onclick="loadReceiptInto('RCP-20250618-0045','Ssekandi Fred','+256 782 901 234','SF61238976CD','Nakato Sarah','Infinix','Hot 40i','4GB / 128GB','Horizon Blue','359112233445566','Cash',395000)"><td class="bold green xs">#RCP-20250618-0045</td><td>Ssekandi Fred</td><td>Infinix Hot 40i</td><td><span class="badge b-g">Cash</span></td><td>Nakato Sarah</td><td class="bold">395,000</td></tr>
+                <tr style="cursor:pointer" onclick="loadReceiptInto('RCP-20250618-0044','Kiggundu Bashir','+256 756 123 890','KB55123456EF','Otim Charles','Nokia','G60 5G','6GB / 128GB','Black','351234567890123','Financed — Mogo',720000)"><td class="bold green xs">#RCP-20250618-0044</td><td>Kiggundu Bashir</td><td>Nokia G60 5G</td><td><span class="badge b-b">Finance</span></td><td>Otim Charles</td><td class="bold">720,000</td></tr>
+                <tr style="cursor:pointer" onclick="loadReceiptInto('RCP-20250617-0043','Nalwanga Rose','+256 714 567 890','NR44987654GH','Namukasa Lydia','Itel','A70 Pro','4GB / 64GB','Purple','356789012345678','Cash',320000)"><td class="bold green xs">#RCP-20250617-0043</td><td>Nalwanga Rose</td><td>Itel A70 Pro</td><td><span class="badge b-g">Cash</span></td><td>Namukasa L.</td><td class="bold">320,000</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div>
+          <div class="between mb8"><div class="xs muted" style="text-transform:uppercase;letter-spacing:1px;font-weight:700">Receipt preview</div><span class="xs muted">Click a row to load it</span></div>
+          <div class="receipt" id="receiptCard">
+            <div class="rh-name">MONALISA TECH SOLUTIONS</div>
+            <div class="rh-addr">Kampala, Uganda, East Africa<br>+256703953711 | kabuusumonalisa@gmail.com</div>
+            <div class="rh-nr" id="r-nr">RECEIPT #RCP-20250618-0047</div>
+            <hr class="r-sep">
+            <div class="r-row"><span>Date</span><strong>18 June 2025</strong></div>
+            <div class="r-row"><span>Time</span><strong>08:32 AM EAT</strong></div>
+            <div class="r-row"><span>Customer</span><strong id="r-cust">Mukasa David</strong></div>
+            <div class="r-row"><span>Phone</span><strong id="r-phone">+256 772 345 678</strong></div>
+            <div class="r-row"><span>National ID</span><strong id="r-nid">CM98765432BC</strong></div>
+            <div class="r-row"><span>Salesperson</span><strong id="r-agent">Agent Apio Grace</strong></div>
+            <hr class="r-sep">
+            <div class="r-row"><span>Brand</span><strong id="r-brand">Tecno</strong></div>
+            <div class="r-row"><span>Model</span><strong id="r-model">Spark 20 Pro</strong></div>
+            <div class="r-row"><span>Specs</span><strong id="r-specs">8GB / 128GB</strong></div>
+            <div class="r-row"><span>Color</span><strong id="r-color">Magic Skin White</strong></div>
+            <div class="r-row"><span>IMEI</span><strong id="r-imei" style="font-family:monospace;font-size:10.5px">352001234567890</strong></div>
+            <div class="r-row"><span>Sale type</span><strong id="r-type" style="color:#009e78">Financed — Watu Credit</strong></div>
+            <div class="r-total"><span>TOTAL</span><span id="r-total" style="color:#009e78">UGX 485,000</span></div>
+            <div class="stamp">
+              <div class="stamp-ring">MONALISA<br>TECH<br>SOLUTIONS</div>
+              <div style="font-size:10px;color:#888">Thank you for choosing us.</div>
+            </div>
+          </div>
+          <div class="row mt12">
+            <button class="btn btn-wa btn-sm" onclick="sendReceiptWA()"><i class="fab fa-whatsapp"></i>Send via WhatsApp</button>
+            <button class="btn btn-mail btn-sm" onclick="sendReceiptEmail()"><i class="fas fa-envelope"></i>Email receipt</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="pg" id="pg-customers">
+      <div class="hd"><h2>Customers</h2><button class="btn btn-g btn-sm" onclick="openM('mAddCustomer')"><i class="fas fa-plus"></i>Add customer</button></div>
+      <div class="card mb14">
+        <div class="row" style="flex-wrap:wrap;gap:10px">
+          <div style="flex:2;min-width:180px"><input class="inp" id="custSearch" placeholder="Name, phone, or National ID..." oninput="filterCustomers()"></div>
+          <div style="flex:1;min-width:130px"><select class="inp" id="custDistrict" onchange="filterCustomers()"><option value="">All districts</option><option>Kampala</option><option>Wakiso</option><option>Gulu</option><option>Jinja</option><option>Mbale</option><option>Mbarara</option></select></div>
+          <button class="btn btn-g btn-sm" onclick="filterCustomers()">Search</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="tw">
+          <table>
+            <thead><tr><th>Name</th><th>Phone</th><th>National ID</th><th>District</th><th>Village</th><th>Agent</th><th>Purchases</th><th>Last purchase</th><th>Contact</th></tr></thead>
+            <tbody id="custTbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="pg" id="pg-financing">
+      <div class="hd"><h2>Financing Integration</h2><button class="btn btn-g btn-sm" onclick="openM('mImportFinance')"><i class="fas fa-upload"></i>Import Excel / CSV</button></div>
+      <div class="g2 mb16">
+        <div>
+          <div class="xs muted mb8" style="text-transform:uppercase;letter-spacing:1px;font-weight:700">Active partners</div>
+          <div class="fp"><div class="fp-logo" style="background:linear-gradient(135deg,#e63946,#c1121f);color:#fff">W</div><div style="flex:1"><div class="bold sm">Watu Credit</div><div style="font-size:10.5px;color:var(--muted)">142 loans active, UGX 68.4M outstanding</div></div><span class="badge b-g">Live</span></div>
+          <div class="fp"><div class="fp-logo" style="background:linear-gradient(135deg,#2d6a4f,#1b4332);color:#fff">Mo</div><div style="flex:1"><div class="bold sm">Mogo Finance</div><div style="font-size:10.5px;color:var(--muted)">87 loans active, UGX 41.2M outstanding</div></div><span class="badge b-g">Live</span></div>
+          <div class="fp"><div class="fp-logo" style="background:linear-gradient(135deg,#f77f00,#d62828);color:#fff">A</div><div style="flex:1"><div class="bold sm">Asaak</div><div style="font-size:10.5px;color:var(--muted)">56 loans active, UGX 23.1M outstanding</div></div><span class="badge b-g">Live</span></div>
+          <div class="fp"><div class="fp-logo" style="background:linear-gradient(135deg,#3a86ff,#023e8a);color:#fff">B</div><div style="flex:1"><div class="bold sm">Stanbic Bank</div><div style="font-size:10.5px;color:var(--muted)">34 loans active, UGX 54.8M outstanding</div></div><span class="badge b-g">Live</span></div>
+          <div class="fp"><div class="fp-logo" style="background:linear-gradient(135deg,var(--violet),#4c1d95);color:#fff">S</div><div style="flex:1"><div class="bold sm">Centenary SACCO</div><div style="font-size:10.5px;color:var(--muted)">23 loans active, UGX 11.9M outstanding</div></div><span class="badge b-a">Syncing</span></div>
+        </div>
+        <div class="card">
+          <div class="hd2">Import records</div>
+          <div id="financeDrop" style="border:2px dashed var(--border2);border-radius:10px;padding:26px;text-align:center;cursor:pointer;transition:.18s" onmouseenter="this.style.borderColor='var(--green)'" onmouseleave="this.style.borderColor='var(--border2)'" onclick="simulateImport()">
+            <i class="fas fa-cloud-upload-alt green" style="font-size:30px;display:block;margin-bottom:8px"></i>
+            <div class="bold mb4">Drop your Excel or CSV file here</div>
+            <div class="xs muted mb12">Columns: Customer Name, Phone, National ID, IMEI, Partner, Status, Balance, Installments</div>
+            <button class="btn btn-o btn-sm" onclick="event.stopPropagation();simulateImport()">Browse file</button>
+          </div>
+          <div class="divider"></div>
+          <div class="bold xs mb8">What gets auto-matched on import</div>
+          <div style="display:flex;flex-wrap:wrap;gap:5px">
+            <span style="background:rgba(0,200,150,.08);border:1px solid rgba(0,200,150,.18);padding:2px 8px;border-radius:4px;font-size:11px;color:var(--green)">Agent</span>
+            <span style="background:rgba(0,200,150,.08);border:1px solid rgba(0,200,150,.18);padding:2px 8px;border-radius:4px;font-size:11px;color:var(--green)">Team Leader</span>
+            <span style="background:rgba(0,200,150,.08);border:1px solid rgba(0,200,150,.18);padding:2px 8px;border-radius:4px;font-size:11px;color:var(--green)">Manager</span>
+            <span style="background:rgba(0,200,150,.08);border:1px solid rgba(0,200,150,.18);padding:2px 8px;border-radius:4px;font-size:11px;color:var(--green)">Shop</span>
+            <span style="background:rgba(0,200,150,.08);border:1px solid rgba(0,200,150,.18);padding:2px 8px;border-radius:4px;font-size:11px;color:var(--green)">IMEI</span>
+            <span style="background:rgba(0,200,150,.08);border:1px solid rgba(0,200,150,.18);padding:2px 8px;border-radius:4px;font-size:11px;color:var(--green)">Sale record</span>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="between mb12"><div class="hd2" style="margin:0">Financing records</div><span class="xs muted">342 matched records</span></div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>Customer</th><th>Phone</th><th>IMEI</th><th>Partner</th><th>Device</th><th>Agent</th><th>Balance (UGX)</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td class="bold">Mukasa David</td><td>+256 772 345 678</td><td class="mono" style="font-size:10.5px">352001234567890</td><td><span class="badge b-r" style="background:rgba(230,57,70,.12);color:#e63946">Watu</span></td><td>Tecno Spark 20 Pro</td><td>Apio Grace</td><td class="bold">387,000</td><td><span class="badge b-a">Defaulted</span></td></tr>
+              <tr><td class="bold">Kiggundu Bashir</td><td>+256 756 123 890</td><td class="mono" style="font-size:10.5px">351234567890123</td><td><span class="badge b-b">Mogo</span></td><td>Nokia G60 5G</td><td>Otim Charles</td><td class="bold">504,000</td><td><span class="badge b-g">Current</span></td></tr>
+              <tr><td class="bold">Nalwanga Rose</td><td>+256 714 567 890</td><td class="mono" style="font-size:10.5px">355678901234567</td><td><span class="badge" style="background:rgba(247,127,0,.12);color:#f77f00">Asaak</span></td><td>Vivo Y36 5G</td><td>Namukasa L.</td><td class="bold">624,000</td><td><span class="badge b-r">Arrears</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="pg" id="pg-recovery">
+      <div class="hd"><h2>Recovery Management</h2><button class="btn btn-g btn-sm" onclick="openM('mNewRecovery')"><i class="fas fa-plus"></i>New case</button></div>
+      <div class="stats">
+        <div class="stat"><div class="stat-ic ic-r"><i class="fas fa-exclamation-circle"></i></div><div class="stat-lbl">Active cases</div><div class="stat-val red" style="font-size:28px">47</div><div class="stat-sub red">Units aged 21+ days</div></div>
+        <div class="stat"><div class="stat-ic ic-a"><i class="fas fa-user-clock"></i></div><div class="stat-lbl">Being worked</div><div class="stat-val" style="font-size:28px">12</div><div class="stat-sub amber">Officers in field</div></div>
+        <div class="stat"><div class="stat-ic ic-g"><i class="fas fa-check-double"></i></div><div class="stat-lbl">Recovered in June</div><div class="stat-val green" style="font-size:28px">28</div><div class="stat-sub green">+8 vs May</div></div>
+        <div class="stat"><div class="stat-ic ic-b"><i class="fas fa-percentage"></i></div><div class="stat-lbl">Recovery rate</div><div class="stat-val" style="font-size:28px">84.6%</div><div class="stat-sub blue">Above target</div></div>
+      </div>
+      <div class="gap">
+        <div class="rcard" id="rcard1">
+          <div class="rcard-head"><div><div class="bold">Samsung Galaxy A55 5G</div><div class="mono mt4">357123459871234</div></div><span class="age age-r">32 days</span></div>
+          <div class="rcard-meta"><span><i class="fas fa-user"></i> Agent Nalwoga Fatuma</span><span><i class="fas fa-map-marker-alt"></i> Kamwokya, Kampala</span><span><i class="fas fa-phone"></i> +256 701 234 567</span><span><i class="fas fa-sitemap"></i> Under Manager Kato Peter</span></div>
+          <div class="xs muted mb10">Recovery Officer Ssenyonga James assigned 16 Jun 2025</div>
+          <div class="row" id="rActions1">
+            <button class="btn btn-g btn-sm" onclick="markRecovered('rcard1','rActions1')"><i class="fas fa-check"></i>Mark recovered</button>
+            <button class="btn btn-ghost btn-sm"><i class="fas fa-phone-alt"></i>Log contact</button>
+            <button class="btn btn-ghost btn-sm"><i class="fas fa-camera"></i>Evidence</button>
+            <button class="btn btn-wa btn-sm" onclick="alertRecoveryWA('Samsung Galaxy A55 5G','357123459871234','Agent Nalwoga Fatuma','32')"><i class="fab fa-whatsapp"></i>Alert CEO</button>
+          </div>
+        </div>
+        <div class="rcard warn" id="rcard2">
+          <div class="rcard-head"><div><div class="bold">Vivo Y36 5G</div><div class="mono mt4">355678901234567</div></div><span class="age age-r">24 days</span></div>
+          <div class="rcard-meta"><span><i class="fas fa-user"></i> Agent Ssempijja Brian</span><span><i class="fas fa-map-marker-alt"></i> Rwebikona, Mbarara</span><span><i class="fas fa-phone"></i> +256 756 890 123</span><span><i class="fas fa-sitemap"></i> Under Manager Ssebuliba Mark</span></div>
+          <div class="xs muted mb10">Officer Nakayima Doris, field visit scheduled 19 Jun 2025</div>
+          <div class="row" id="rActions2">
+            <button class="btn btn-g btn-sm" onclick="markRecovered('rcard2','rActions2')"><i class="fas fa-check"></i>Mark recovered</button>
+            <button class="btn btn-ghost btn-sm"><i class="fas fa-phone-alt"></i>Log contact</button>
+            <button class="btn btn-ghost btn-sm"><i class="fas fa-camera"></i>Evidence</button>
+            <button class="btn btn-wa btn-sm" onclick="alertRecoveryWA('Vivo Y36 5G','355678901234567','Agent Ssempijja Brian','24')"><i class="fab fa-whatsapp"></i>Alert CEO</button>
+          </div>
+        </div>
+        <div class="rcard done">
+          <div class="rcard-head"><div><div class="bold">Infinix Hot 40i</div><div class="mono mt4">359876543210123</div></div><span class="badge b-g">Recovered</span></div>
+          <div class="rcard-meta"><span><i class="fas fa-user"></i> Was with Agent Sserubiri Paul</span><span><i class="fas fa-map-marker-alt"></i> Layibi, Gulu</span><span><i class="fas fa-calendar-check"></i> Recovered 16 Jun 2025</span></div>
+          <div class="xs green">Returned to CEO inventory at 09:45 AM, 16 Jun 2025</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pg" id="pg-commissions">
+      <div class="hd"><h2>Commissions</h2><button class="btn btn-g btn-sm" onclick="toast('Batch payment queued for processing')"><i class="fas fa-money-bill-wave"></i>Process payments</button></div>
+      <div class="stats">
+        <div class="stat"><div class="stat-lbl">Due this month</div><div class="stat-val green" style="font-size:21px">UGX 8.4M</div></div>
+        <div class="stat"><div class="stat-lbl">Still to pay</div><div class="stat-val amber" style="font-size:21px">UGX 3.2M</div></div>
+        <div class="stat"><div class="stat-lbl">Paid in June</div><div class="stat-val" style="font-size:21px">UGX 5.2M</div></div>
+        <div class="stat"><div class="stat-lbl">Agents earning</div><div class="stat-val" style="font-size:21px">38</div></div>
+      </div>
+      <div class="tabs" id="commTabs">
+        <button class="tab on" onclick="setTab(this,'commTabs')">Agents</button>
+        <button class="tab" onclick="setTab(this,'commTabs')">Team Leaders</button>
+        <button class="tab" onclick="setTab(this,'commTabs')">Managers</button>
+        <button class="tab" onclick="setTab(this,'commTabs')">Shop Owners</button>
+      </div>
+      <div class="card">
+        <div class="tw">
+          <table>
+            <thead><tr><th>Agent</th><th>Manager</th><th>District</th><th>Units</th><th>Revenue</th><th>Rate</th><th>Commission (UGX)</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+              <tr><td class="bold">Apio Grace</td><td>Kato Peter</td><td>Gulu</td><td class="bold">24</td><td>18,240,000</td><td>3%</td><td class="bold green">547,200</td><td><span class="badge b-a">Pending</span></td><td><button class="btn btn-g btn-sm" onclick="payComm(this)">Pay</button></td></tr>
+              <tr><td class="bold">Mukasa Ronald</td><td>Kato Peter</td><td>Kampala</td><td class="bold">21</td><td>16,485,000</td><td>3%</td><td class="bold green">494,550</td><td><span class="badge b-g">Paid</span></td><td><button class="btn btn-ghost btn-sm">Receipt</button></td></tr>
+              <tr><td class="bold">Nakato Sarah</td><td>Nakamya J.</td><td>Jinja</td><td class="bold">19</td><td>14,630,000</td><td>3%</td><td class="bold green">438,900</td><td><span class="badge b-a">Pending</span></td><td><button class="btn btn-g btn-sm" onclick="payComm(this)">Pay</button></td></tr>
+              <tr><td class="bold">Otim Charles</td><td>Nakamya J.</td><td>Mbale</td><td class="bold">16</td><td>12,080,000</td><td>3%</td><td class="bold">362,400</td><td><span class="badge b-g">Paid</span></td><td><button class="btn btn-ghost btn-sm">Receipt</button></td></tr>
+              <tr><td class="bold">Ssempijja Brian</td><td>Ssebuliba M.</td><td>Mbarara</td><td class="bold">9</td><td>6,840,000</td><td>2.5%</td><td class="bold">171,000</td><td><span class="badge b-r">On hold</span></td><td><button class="btn btn-ghost btn-sm">Review</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="pg" id="pg-performance">
+      <div class="hd"><h2>Performance Center</h2><span class="badge b-g"><span class="dot-live" style="width:5px;height:5px;margin-right:4px"></span>Live</span></div>
+      <div class="g2 mb16">
+        <div class="card">
+          <div class="hd2">Top managers, June 2025</div>
+          <div class="rank-row"><div class="rank-n r1">1</div><div style="flex:1"><div class="bold sm">Kato Peter</div><div class="xs muted">Kampala, 4 TLs, 18 agents</div></div><div style="text-align:right"><div class="bold green sm">UGX 98.4M</div><div class="xs muted">124 units</div></div></div>
+          <div class="rank-row"><div class="rank-n r2">2</div><div style="flex:1"><div class="bold sm">Nakamya Judith</div><div class="xs muted">Eastern, 3 TLs, 14 agents</div></div><div style="text-align:right"><div class="bold green sm">UGX 76.2M</div><div class="xs muted">98 units</div></div></div>
+          <div class="rank-row"><div class="rank-n r3">3</div><div style="flex:1"><div class="bold sm">Ssebuliba Mark</div><div class="xs muted">Western, 2 TLs, 11 agents</div></div><div style="text-align:right"><div class="bold sm">UGX 62.8M</div><div class="xs muted">76 units</div></div></div>
+          <div class="rank-row"><div class="rank-n r0">4</div><div style="flex:1"><div class="bold sm">Abaasa Robert</div><div class="xs muted">Northern, 2 TLs, 9 agents</div></div><div style="text-align:right"><div class="bold sm">UGX 41.3M</div><div class="xs muted">52 units</div></div></div>
+        </div>
+        <div class="card">
+          <div class="hd2">Top agents, June 2025</div>
+          <div class="rank-row"><div class="rank-n r1">1</div><div style="flex:1"><div class="bold sm">Apio Grace</div><div class="xs muted">Gulu, TL Ssali Moses</div></div><div style="text-align:right"><div class="bold green sm">UGX 18.2M</div><div class="xs muted">24 units</div></div></div>
+          <div class="rank-row"><div class="rank-n r2">2</div><div style="flex:1"><div class="bold sm">Mukasa Ronald</div><div class="xs muted">Kampala Nakawa</div></div><div style="text-align:right"><div class="bold green sm">UGX 16.5M</div><div class="xs muted">21 units</div></div></div>
+          <div class="rank-row"><div class="rank-n r3">3</div><div style="flex:1"><div class="bold sm">Nakato Sarah</div><div class="xs muted">Jinja, TL Kasozi</div></div><div style="text-align:right"><div class="bold sm">UGX 14.9M</div><div class="xs muted">19 units</div></div></div>
+          <div class="rank-row"><div class="rank-n r0">4</div><div style="flex:1"><div class="bold sm">Otim Charles</div><div class="xs muted">Mbale, Eastern</div></div><div style="text-align:right"><div class="bold sm">UGX 12.1M</div><div class="xs muted">16 units</div></div></div>
+          <div class="rank-row"><div class="rank-n r0">5</div><div style="flex:1"><div class="bold sm">Namukasa Lydia</div><div class="xs muted">Mbarara, Western</div></div><div style="text-align:right"><div class="bold sm">UGX 11.4M</div><div class="xs muted">15 units</div></div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="hd2">Manager performance over 6 months</div>
+        <div class="ch h260"><canvas id="cPerf"></canvas></div>
+      </div>
+    </div>
+    <div class="pg" id="pg-reports">
+      <div class="hd"><h2>Reports</h2></div>
+      <div class="g3 mb16">
+        <div class="card" style="cursor:pointer" onmouseenter="this.style.borderColor='var(--green)'" onmouseleave="this.style.borderColor='var(--border)'" onclick="emailReport('Daily sales report')"><div style="font-size:26px">📊</div><div class="bold mt8 mb4">Daily sales</div><div class="xs muted mb12">Transactions, revenue, agents, customers</div><div class="row"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();toast('PDF generated')"><i class="fas fa-file-pdf"></i>PDF</button><button class="btn btn-mail btn-sm" onclick="event.stopPropagation();emailReport('Daily sales report')"><i class="fas fa-envelope"></i>Email</button></div></div>
+        <div class="card" style="cursor:pointer" onmouseenter="this.style.borderColor='var(--green)'" onmouseleave="this.style.borderColor='var(--border)'" onclick="emailReport('Inventory status report')"><div style="font-size:26px">📦</div><div class="bold mt8 mb4">Inventory status</div><div class="xs muted mb12">Stock positions, IMEI tracking, aging</div><div class="row"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();toast('PDF generated')"><i class="fas fa-file-pdf"></i>PDF</button><button class="btn btn-mail btn-sm" onclick="event.stopPropagation();emailReport('Inventory status report')"><i class="fas fa-envelope"></i>Email</button></div></div>
+        <div class="card" style="cursor:pointer" onmouseenter="this.style.borderColor='var(--green)'" onmouseleave="this.style.borderColor='var(--border)'" onclick="emailReport('Recovery cases report')"><div style="font-size:26px">🛡️</div><div class="bold mt8 mb4">Recovery cases</div><div class="xs muted mb12">Cases, officers, outcomes, timelines</div><div class="row"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();toast('PDF generated')"><i class="fas fa-file-pdf"></i>PDF</button><button class="btn btn-mail btn-sm" onclick="event.stopPropagation();emailReport('Recovery cases report')"><i class="fas fa-envelope"></i>Email</button></div></div>
+        <div class="card" style="cursor:pointer" onmouseenter="this.style.borderColor='var(--green)'" onmouseleave="this.style.borderColor='var(--border)'" onclick="emailReport('Commission report')"><div style="font-size:26px">💰</div><div class="bold mt8 mb4">Commissions</div><div class="xs muted mb12">Earnings by level and time period</div><div class="row"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();toast('PDF generated')"><i class="fas fa-file-pdf"></i>PDF</button><button class="btn btn-mail btn-sm" onclick="event.stopPropagation();emailReport('Commission report')"><i class="fas fa-envelope"></i>Email</button></div></div>
+        <div class="card" style="cursor:pointer" onmouseenter="this.style.borderColor='var(--green)'" onmouseleave="this.style.borderColor='var(--border)'" onclick="emailReport('Financing summary report')"><div style="font-size:26px">🤝</div><div class="bold mt8 mb4">Financing summary</div><div class="xs muted mb12">Partner breakdown, defaults, arrears</div><div class="row"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();toast('PDF generated')"><i class="fas fa-file-pdf"></i>PDF</button><button class="btn btn-mail btn-sm" onclick="event.stopPropagation();emailReport('Financing summary report')"><i class="fas fa-envelope"></i>Email</button></div></div>
+        <div class="card" style="cursor:pointer" onmouseenter="this.style.borderColor='var(--green)'" onmouseleave="this.style.borderColor='var(--border)'" onclick="emailReport('Regional breakdown report')"><div style="font-size:26px">🗺️</div><div class="bold mt8 mb4">Regional breakdown</div><div class="xs muted mb12">District performance, branches</div><div class="row"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();toast('PDF generated')"><i class="fas fa-file-pdf"></i>PDF</button><button class="btn btn-mail btn-sm" onclick="event.stopPropagation();emailReport('Regional breakdown report')"><i class="fas fa-envelope"></i>Email</button></div></div>
+      </div>
+      <div class="card">
+        <div class="between mb16"><div class="hd2" style="margin:0">June 2025 summary</div><span class="badge b-g">Complete</span></div>
+        <div style="display:flex;flex-wrap:wrap;background:var(--card2);border-radius:10px;overflow:hidden;margin-bottom:16px">
+          <div style="flex:1;min-width:120px;padding:16px;text-align:center;border-right:1px solid var(--border)"><div class="xs muted mb4">Total revenue</div><div class="bold green lg">UGX 312M</div></div>
+          <div style="flex:1;min-width:120px;padding:16px;text-align:center;border-right:1px solid var(--border)"><div class="xs muted mb4">Units sold</div><div class="bold lg">348</div></div>
+          <div style="flex:1;min-width:120px;padding:16px;text-align:center;border-right:1px solid var(--border)"><div class="xs muted mb4">Avg price</div><div class="bold lg">UGX 897K</div></div>
+          <div style="flex:1;min-width:120px;padding:16px;text-align:center"><div class="xs muted mb4">Gross profit</div><div class="bold green lg">UGX 67M</div></div>
+        </div>
+        <div class="ch h260"><canvas id="cReports"></canvas></div>
+      </div>
+    </div>
+
+    <div class="pg" id="pg-uganda">
+      <div class="hd"><h2>Uganda Analytics</h2><span class="badge b-b">District level</span></div>
+      <div class="g2 mb16" style="grid-template-columns:1fr 2fr">
+        <div>
+          <div class="card mb12" style="position:relative">
+            <div class="hd2">Click any district</div>
+            <div class="map-tt" id="mapTT"></div>
+            <svg id="mapSvg" viewBox="0 0 400 460" style="width:100%;height:auto;display:block">
+              <path d="M185 240 L205 235 L215 250 L205 265 L185 260 Z" data-name="Kampala" data-val="UGX 142M" data-units="156"/>
+              <path d="M160 220 L190 215 L205 235 L185 240 L185 260 L165 265 L148 250 Z" data-name="Wakiso" data-val="UGX 84M" data-units="94"/>
+              <path d="M205 235 L235 230 L248 248 L235 260 L215 260 L205 265 Z" data-name="Mukono" data-val="UGX 28M" data-units="31"/>
+              <path d="M235 230 L268 228 L278 246 L262 260 L248 248 Z" data-name="Jinja" data-val="UGX 44M" data-units="49"/>
+              <path d="M268 228 L305 220 L315 245 L295 260 L278 246 Z" data-name="Mbale" data-val="UGX 36M" data-units="40"/>
+              <path d="M255 185 L295 178 L310 200 L295 220 L268 228 L248 210 Z" data-name="Soroti" data-val="UGX 18M" data-units="20"/>
+              <path d="M210 155 L255 145 L270 168 L255 185 L225 188 L205 170 Z" data-name="Lira" data-val="UGX 16M" data-units="18"/>
+              <path d="M168 105 L220 95 L235 120 L225 145 L210 155 L185 148 L162 130 Z" data-name="Gulu" data-val="UGX 56M" data-units="62"/>
+              <path d="M95 80 L155 72 L168 105 L162 130 L138 138 L100 120 Z" data-name="Arua" data-val="UGX 21M" data-units="23"/>
+              <path d="M118 158 L162 145 L185 148 L185 175 L165 188 L132 185 Z" data-name="Masindi" data-val="UGX 12M" data-units="13"/>
+              <path d="M88 200 L132 185 L148 200 L145 225 L118 238 L85 225 Z" data-name="Fort Portal" data-val="UGX 12M" data-units="13"/>
+              <path d="M118 290 L158 278 L165 295 L160 320 L130 330 L108 318 Z" data-name="Mbarara" data-val="UGX 30M" data-units="33"/>
+              <path d="M130 340 L165 330 L175 355 L155 375 L128 368 Z" data-name="Kabale" data-val="UGX 8M" data-units="9"/>
+              <path d="M148 260 L185 260 L190 278 L175 295 L155 295 L138 278 Z" data-name="Masaka" data-val="UGX 10M" data-units="11"/>
+              <path d="M82 248 L118 238 L130 255 L118 290 L90 285 L72 265 Z" data-name="Kasese" data-val="UGX 7M" data-units="8"/>
+              <path d="M295 178 L335 172 L345 198 L328 215 L315 200 Z" data-name="Moroto" data-val="UGX 4M" data-units="5"/>
+              <path d="M220 72 L275 62 L285 90 L265 110 L235 120 L220 95 Z" data-name="Kitgum" data-val="UGX 6M" data-units="7"/>
+              <path d="M185 148 L225 145 L235 165 L225 188 L205 185 L185 175 Z" data-name="Apac" data-val="UGX 9M" data-units="10"/>
+              <path d="M278 246 L295 260 L285 280 L265 278 L255 260 L262 260 Z" data-name="Tororo" data-val="UGX 14M" data-units="16"/>
+              <path d="M248 248 L265 244 L275 260 L262 270 L248 265 Z" data-name="Iganga" data-val="UGX 11M" data-units="12"/>
+            </svg>
+            <div class="xs muted mt8" style="text-align:center">Hover to preview, click to highlight</div>
+          </div>
+        </div>
+        <div>
+          <div class="card mb12">
+            <div class="hd2">Sales by district</div>
+            <div class="ch h260"><canvas id="cUganda"></canvas></div>
+          </div>
+          <div class="card">
+            <div class="hd2">District breakdown</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px">
+              <div style="background:var(--card2);border-radius:8px;padding:11px"><div class="bold xs mb4">Kampala</div><div class="bar mb4"><div class="bar-fill" style="width:100%;background:var(--green)"></div></div><div class="xs muted">UGX 142M, 156 units</div></div>
+              <div style="background:var(--card2);border-radius:8px;padding:11px"><div class="bold xs mb4">Wakiso</div><div class="bar mb4"><div class="bar-fill" style="width:59%;background:var(--green)"></div></div><div class="xs muted">UGX 84M, 94 units</div></div>
+              <div style="background:var(--card2);border-radius:8px;padding:11px"><div class="bold xs mb4">Gulu</div><div class="bar mb4"><div class="bar-fill" style="width:39%;background:var(--blue)"></div></div><div class="xs muted">UGX 56M, 62 units</div></div>
+              <div style="background:var(--card2);border-radius:8px;padding:11px"><div class="bold xs mb4">Jinja</div><div class="bar mb4"><div class="bar-fill" style="width:31%;background:var(--blue)"></div></div><div class="xs muted">UGX 44M, 49 units</div></div>
+              <div style="background:var(--card2);border-radius:8px;padding:11px"><div class="bold xs mb4">Mbale</div><div class="bar mb4"><div class="bar-fill" style="width:25%;background:var(--amber)"></div></div><div class="xs muted">UGX 36M, 40 units</div></div>
+              <div style="background:var(--card2);border-radius:8px;padding:11px"><div class="bold xs mb4">Mbarara</div><div class="bar mb4"><div class="bar-fill" style="width:21%;background:var(--amber)"></div></div><div class="xs muted">UGX 30M, 33 units</div></div>
+              <div style="background:var(--card2);border-radius:8px;padding:11px"><div class="bold xs mb4">Arua</div><div class="bar mb4"><div class="bar-fill" style="width:15%;background:var(--violet)"></div></div><div class="xs muted">UGX 21M, 23 units</div></div>
+              <div style="background:var(--card2);border-radius:8px;padding:11px"><div class="bold xs mb4">Lira</div><div class="bar mb4"><div class="bar-fill" style="width:11%;background:var(--violet)"></div></div><div class="xs muted">UGX 16M, 18 units</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pg" id="pg-warehouses">
+      <div class="hd"><h2>Warehouses and Branches</h2><button class="btn btn-g btn-sm" onclick="openM('mAddWarehouse')"><i class="fas fa-plus"></i>Add warehouse</button></div>
+      <div class="g3 mb16">
+        <div class="card" style="border-top:3px solid var(--green)">
+          <div class="between mb10"><span class="bold">CEO Master Warehouse</span><span class="badge b-g">Main</span></div>
+          <div class="xs muted mb4">Kampala, Owino Area</div><div class="xs muted mb16">Manager: CEO Monalisa</div>
+          <div class="g2" style="gap:8px">
+            <div style="background:var(--card2);padding:10px;border-radius:8px;text-align:center"><div class="bold green lg">283</div><div class="xs muted">Units</div></div>
+            <div style="background:var(--card2);padding:10px;border-radius:8px;text-align:center"><div class="bold" style="font-size:13px">UGX 267M</div><div class="xs muted">Value</div></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="between mb10"><span class="bold">Kampala Central</span><span class="badge b-g">Active</span></div>
+          <div class="xs muted mb4">Luwum Street, Kampala</div><div class="xs muted mb16">Manager: Kato Peter</div>
+          <div class="g2" style="gap:8px">
+            <div style="background:var(--card2);padding:10px;border-radius:8px;text-align:center"><div class="bold green lg">124</div><div class="xs muted">Units</div></div>
+            <div style="background:var(--card2);padding:10px;border-radius:8px;text-align:center"><div class="bold" style="font-size:13px">UGX 124M</div><div class="xs muted">Value</div></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="between mb10"><span class="bold">Gulu Northern</span><span class="badge b-g">Active</span></div>
+          <div class="xs muted mb4">Bardege Division, Gulu</div><div class="xs muted mb16">Manager: Abaasa Robert</div>
+          <div class="g2" style="gap:8px">
+            <div style="background:var(--card2);padding:10px;border-radius:8px;text-align:center"><div class="bold lg">68</div><div class="xs muted">Units</div></div>
+            <div style="background:var(--card2);padding:10px;border-radius:8px;text-align:center"><div class="bold" style="font-size:13px">UGX 59M</div><div class="xs muted">Value</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="pg" id="pg-users">
+      <div class="hd"><h2>User Management</h2><button class="btn btn-g btn-sm" id="createUserBtn" onclick="openM('mCreateUser')"><i class="fas fa-user-plus"></i>Create login</button></div>
+
+      <div class="perm-banner" id="usersPermBanner" style="display:none"><i class="fas fa-lock"></i><span>Only the Chief Executive Officer can create or delete user logins. You can view this directory but cannot make changes.</span></div>
+
+      <div class="stats">
+        <div class="stat"><div class="stat-lbl">Total users</div><div class="stat-val" style="font-size:26px">96</div></div>
+        <div class="stat"><div class="stat-lbl">Administrators</div><div class="stat-val" style="color:var(--violet);font-size:26px">2</div></div>
+        <div class="stat"><div class="stat-lbl">Managers</div><div class="stat-val blue" style="font-size:26px">4</div></div>
+        <div class="stat"><div class="stat-lbl">Team Leaders</div><div class="stat-val" style="font-size:26px">12</div></div>
+        <div class="stat"><div class="stat-lbl">Agents</div><div class="stat-val amber" style="font-size:26px">38</div></div>
+        <div class="stat"><div class="stat-lbl">Shop Owners</div><div class="stat-val" style="font-size:26px">18</div></div>
+      </div>
+
+      <div class="card mb16">
+        <div class="hd2">Reporting structure</div>
+        <div class="xs muted mb12">How stock and authority flow through the company</div>
+        <div class="wf" style="margin-bottom:0">
+          <div class="wf-step"><div class="wf-num done" style="background:var(--amber);border-color:var(--amber);color:#1a1200">CEO</div><div class="wf-lbl done">Monalisa</div></div>
+          <div class="wf-line done"></div>
+          <div class="wf-step"><div class="wf-num done" style="background:var(--violet);border-color:var(--violet)">Ad</div><div class="wf-lbl done">Administrators</div></div>
+          <div class="wf-line done"></div>
+          <div class="wf-step"><div class="wf-num done">Mg</div><div class="wf-lbl done">Managers</div></div>
+          <div class="wf-line done"></div>
+          <div class="wf-step"><div class="wf-num active">TL</div><div class="wf-lbl active">Team Leaders</div></div>
+          <div class="wf-line"></div>
+          <div class="wf-step"><div class="wf-num">Ag</div><div class="wf-lbl">Agents / Shop Owners</div></div>
+        </div>
+      </div>
+
+      <div class="tabs" id="userTabs">
+        <button class="tab on" onclick="setTab(this,'userTabs');filterUsers('')">All (96)</button>
+        <button class="tab" onclick="setTab(this,'userTabs');filterUsers('Administrator')">Admins (2)</button>
+        <button class="tab" onclick="setTab(this,'userTabs');filterUsers('Manager')">Managers (4)</button>
+        <button class="tab" onclick="setTab(this,'userTabs');filterUsers('Team Leader')">Team Leaders (12)</button>
+        <button class="tab" onclick="setTab(this,'userTabs');filterUsers('Agent')">Agents (38)</button>
+        <button class="tab" onclick="setTab(this,'userTabs');filterUsers('Shop Owner')">Shop Owners (18)</button>
+        <button class="tab" onclick="setTab(this,'userTabs');filterUsers('Recovery Officer')">Recovery (8)</button>
+      </div>
+      <div class="card">
+        <div class="tw">
+          <table>
+            <thead><tr><th>Name</th><th>Role</th><th>Phone</th><th>District</th><th>Reports to</th><th>Joined</th><th>Status</th><th></th></tr></thead>
+            <tbody id="usersTbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="pg" id="pg-security">
+      <div class="hd"><h2>Security Center</h2><span class="badge b-g"><i class="fas fa-shield-halved" style="margin-right:4px"></i>Protected</span></div>
+      <div class="g2 mb16">
+        <div class="card">
+          <div class="hd2">Your session</div>
+          <div class="sec-row"><div><div class="bold sm">Auto-lock after inactivity</div><div class="xs muted">Lock the screen after 5 minutes of no activity</div></div><div class="toggle on" id="toggleAutolock" onclick="toggleSetting(this)"></div></div>
+          <div class="sec-row"><div><div class="bold sm">Login alerts</div><div class="xs muted">Notify CEO by WhatsApp on every new device login</div></div><div class="toggle on" id="toggleLoginAlerts" onclick="toggleSetting(this)"></div></div>
+          <div class="sec-row"><div><div class="bold sm">Require password on sensitive actions</div><div class="xs muted">Re-confirm password before deleting users or overriding allocations</div></div><div class="toggle on" id="toggleSensitive" onclick="toggleSetting(this)"></div></div>
+          <div class="sec-row"><div><div class="bold sm">Two-factor verification</div><div class="xs muted">SMS code required at login, in addition to password</div></div><div class="toggle" id="toggle2fa" onclick="toggleSetting(this)"></div></div>
+        </div>
+        <div class="card">
+          <div class="hd2">Recent sign-ins</div>
+          <div class="tl">
+            <div class="tl-item"><div class="tl-dot" style="background:var(--green)"></div><div class="tl-when">Today, 08:47 AM</div><div class="tl-what">Signed in successfully</div><div class="tl-who">iPad, Safari, Kampala — this device</div></div>
+            <div class="tl-item"><div class="tl-dot" style="background:var(--green)"></div><div class="tl-when">Yesterday, 06:12 PM</div><div class="tl-what">Signed in successfully</div><div class="tl-who">iPhone, Safari, Kampala</div></div>
+            <div class="tl-item"><div class="tl-dot" style="background:var(--amber)"></div><div class="tl-when">17 Jun 2025, 11:03 PM</div><div class="tl-what">Sign-in from a new device</div><div class="tl-who">Android, Chrome, Kampala — approved</div></div>
+            <div class="tl-item"><div class="tl-dot" style="background:var(--red)"></div><div class="tl-when">15 Jun 2025, 02:40 AM</div><div class="tl-what">Failed sign-in attempt</div><div class="tl-who">Unknown device, Nairobi, Kenya — blocked, wrong password 3 times</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="between mb12"><div class="hd2" style="margin:0">Password policy</div><span class="badge b-g">Enforced</span></div>
+        <div class="g3">
+          <div class="card-sm"><div class="bold sm mb4"><i class="fas fa-key amber"></i> Minimum length</div><div class="xs muted">8 characters, at least one number</div></div>
+          <div class="card-sm"><div class="bold sm mb4"><i class="fas fa-rotate blue"></i> Reset cycle</div><div class="xs muted">CEO can force a reset for any account, any time</div></div>
+          <div class="card-sm"><div class="bold sm mb4"><i class="fas fa-ban red"></i> Lockout rule</div><div class="xs muted">3 failed attempts locks the account for 15 minutes</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pg" id="pg-integrations">
+      <div class="hd"><h2>Integrations</h2></div>
+      <div class="g2 mb16">
+        <div class="card">
+          <div class="row mb12"><div style="width:42px;height:42px;background:rgba(37,211,102,.15);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:19px;color:#25d366"><i class="fab fa-whatsapp"></i></div><div><div class="bold">WhatsApp Business</div><div class="xs muted">Connected to +256 703 953 711</div></div><span class="badge b-g" style="margin-left:auto">Connected</span></div>
+          <div class="xs muted mb12">Sends receipts, recovery alerts, and aged-stock warnings straight to Monalisa's WhatsApp. Every message opens directly in WhatsApp, pre-filled and ready to send.</div>
+          <div class="sec-row"><div><div class="bold sm">Aged stock alerts (21+ days)</div></div><div class="toggle on" onclick="toggleSetting(this)"></div></div>
+          <div class="sec-row"><div><div class="bold sm">New sale receipts</div></div><div class="toggle on" onclick="toggleSetting(this)"></div></div>
+          <div class="sec-row"><div><div class="bold sm">Recovery case updates</div></div><div class="toggle on" onclick="toggleSetting(this)"></div></div>
+          <div class="sec-row"><div><div class="bold sm">New login from unknown device</div></div><div class="toggle on" onclick="toggleSetting(this)"></div></div>
+          <button class="btn btn-wa btn-sm mt12" onclick="testWA()"><i class="fab fa-whatsapp"></i>Send a test message</button>
+        </div>
+        <div class="card">
+          <div class="row mb12"><div style="width:42px;height:42px;background:rgba(76,110,245,.15);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--blue)"><i class="fas fa-envelope"></i></div><div><div class="bold">Email notifications</div><div class="xs muted">Connected to kabuusumonalisa@gmail.com</div></div><span class="badge b-g" style="margin-left:auto">Connected</span></div>
+          <div class="xs muted mb12">Daily and monthly reports, plus copies of every receipt, are emailed automatically. Clicking any "Email" button opens a draft in your mail app addressed to Monalisa.</div>
+          <div class="sec-row"><div><div class="bold sm">Daily sales summary, 9:00 PM</div></div><div class="toggle on" onclick="toggleSetting(this)"></div></div>
+          <div class="sec-row"><div><div class="bold sm">Monthly performance report</div></div><div class="toggle on" onclick="toggleSetting(this)"></div></div>
+          <div class="sec-row"><div><div class="bold sm">Financing partner defaults</div></div><div class="toggle on" onclick="toggleSetting(this)"></div></div>
+          <div class="sec-row"><div><div class="bold sm">New admin or manager created</div></div><div class="toggle on" onclick="toggleSetting(this)"></div></div>
+          <button class="btn btn-mail btn-sm mt12" onclick="testEmail()"><i class="fas fa-envelope"></i>Send a test email</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="hd2">Delivery log</div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>Time</th><th>Channel</th><th>Type</th><th>Recipient</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td class="xs muted">09:18 AM</td><td><span class="badge" style="background:rgba(37,211,102,.12);color:#25d366"><i class="fab fa-whatsapp"></i> WhatsApp</span></td><td>Aged stock alert</td><td>+256703953711</td><td><span class="badge b-g">Delivered</span></td></tr>
+              <tr><td class="xs muted">08:32 AM</td><td><span class="badge" style="background:rgba(37,211,102,.12);color:#25d366"><i class="fab fa-whatsapp"></i> WhatsApp</span></td><td>Sale receipt</td><td>+256703953711</td><td><span class="badge b-g">Delivered</span></td></tr>
+              <tr><td class="xs muted">Yesterday, 09:00 PM</td><td><span class="badge b-b"><i class="fas fa-envelope"></i> Email</td><td>Daily sales summary</td><td>kabuusumonalisa@gmail.com</td><td><span class="badge b-g">Delivered</span></td></tr>
+              <tr><td class="xs muted">Yesterday, 03:14 PM</td><td><span class="badge" style="background:rgba(37,211,102,.12);color:#25d366"><i class="fab fa-whatsapp"></i> WhatsApp</span></td><td>Recovery case opened</td><td>+256703953711</td><td><span class="badge b-g">Delivered</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="pg" id="pg-auditlogs">
+      <div class="hd"><h2>Audit Logs</h2><button class="btn btn-ghost btn-sm"><i class="fas fa-download"></i>Export</button></div>
+      <div class="card">
+        <div class="tw">
+          <table>
+            <thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Module</th><th>Details</th><th>Device</th><th>Location</th></tr></thead>
+            <tbody>
+              <tr><td class="xs muted">08:47:12</td><td class="bold">CEO Monalisa</td><td><span class="badge b-a" style="font-size:9.5px">CEO</span></td><td>LOGIN</td><td>Auth</td><td>Successful login</td><td>iPad / Safari</td><td>Kampala</td></tr>
+              <tr><td class="xs muted">08:15:40</td><td class="bold">Namugga Sarah</td><td><span class="badge b-v" style="font-size:9.5px">Admin</span></td><td>LOGIN</td><td>Auth</td><td>Successful login</td><td>Windows / Chrome</td><td>Kampala HQ</td></tr>
+              <tr><td class="xs muted">08:45:03</td><td class="bold">Kato Peter</td><td><span class="badge b-b" style="font-size:9.5px">Manager</span></td><td>ALLOCATE</td><td>Stock</td><td>8 units to Agent Mukasa Ronald</td><td>Android / Chrome</td><td>Kampala</td></tr>
+              <tr><td class="xs muted">09:02:41</td><td class="bold">Apio Grace</td><td><span class="badge b-g" style="font-size:9.5px">Agent</span></td><td>SALE</td><td>Sales</td><td>Tecno Spark 20, Mukasa David</td><td>Android / App</td><td>Gulu</td></tr>
+              <tr><td class="xs muted">09:18:55</td><td class="bold">System</td><td><span class="badge b-r" style="font-size:9.5px">AUTO</span></td><td>ALERT</td><td>Recovery</td><td>Samsung A55 aged 32 days, WhatsApp sent</td><td>Server</td><td>System</td></tr>
+              <tr><td class="xs muted">07:34:11</td><td class="bold">Ssenyonga J.</td><td><span class="badge b-r" style="font-size:9.5px">Recovery</span></td><td>RECOVER</td><td>Recovery</td><td>Infinix Hot 40i returned to CEO</td><td>Android</td><td>Kampala</td></tr>
+              <tr style="background:rgba(232,69,69,.04)"><td class="xs muted">02:40:18</td><td class="bold red">Unknown</td><td><span class="badge b-r" style="font-size:9.5px">BLOCKED</span></td><td>LOGIN_FAIL</td><td>Auth</td><td>3 failed attempts, account locked 15 min</td><td>Unknown</td><td>Nairobi, Kenya</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="pg" id="pg-settings">
+      <div class="hd"><h2>Settings</h2><button class="btn btn-g btn-sm" onclick="toast('Settings saved')"><i class="fas fa-save"></i>Save changes</button></div>
+      <div class="g2">
+        <div class="card">
+          <div class="hd2">Company info</div>
+          <div class="fg"><label class="lbl">Company name</label><input class="inp" value="MONALISA TECH SOLUTIONS"></div>
+          <div class="fg"><label class="lbl">Address</label><input class="inp" value="Kampala, Uganda, East Africa"></div>
+          <div class="fg"><label class="lbl">WhatsApp number</label><input class="inp" value="+256703953711"></div>
+          <div class="fg"><label class="lbl">Email</label><input class="inp" value="kabuusumonalisa@gmail.com"></div>
+        </div>
+        <div class="card">
+          <div class="hd2">Stock aging rules</div>
+          <div class="fg"><label class="lbl">Green threshold (days)</label><input class="inp" type="number" value="9"></div>
+          <div class="fg"><label class="lbl">Amber warning starts (days)</label><input class="inp" type="number" value="10"></div>
+          <div class="fg"><label class="lbl">Red critical starts (days)</label><input class="inp" type="number" value="21"></div>
+          <div class="hd2 mt16">Commission rates</div>
+          <div class="fg"><label class="lbl">Agent (%)</label><input class="inp" type="number" value="3" step="0.1"></div>
+          <div class="fg"><label class="lbl">Team Leader (%)</label><input class="inp" type="number" value="1.5" step="0.1"></div>
+          <div class="fg"><label class="lbl">Manager (%)</label><input class="inp" type="number" value="0.8" step="0.1"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+<div class="mwrap" id="mCreateUser">
+  <div class="modal">
+    <div class="m-hd"><h3>Create new login</h3><button class="m-x" onclick="closeM('mCreateUser')"><i class="fas fa-times"></i></button></div>
+    <div class="m-body">
+      <div class="perm-banner" style="margin-bottom:18px"><i class="fas fa-shield-halved"></i><span>Only the CEO can finish creating a login. Admins can fill this form and submit it for approval.</span></div>
+      <div class="g2">
+        <div class="fg"><label class="lbl">Full name</label><input class="inp" placeholder="Full name" id="nuName"></div>
+        <div class="fg"><label class="lbl">Role</label><select class="inp" id="nuRole"><option>Administrator</option><option>Manager</option><option>Team Leader</option><option>Agent</option><option>Shop Owner</option><option>Recovery Officer</option></select></div>
+        <div class="fg"><label class="lbl">Phone (becomes login ID)</label><input class="inp" placeholder="+256 7XX XXX XXX" id="nuPhone" inputmode="tel" pattern="\+256[0-9]{9}" title="Use format +256XXXXXXXXX"></div>
+        <div class="fg"><label class="lbl">Email</label><input class="inp" type="email" placeholder="user@email.com"></div>
+        <div class="fg"><label class="lbl">National ID</label><input class="inp" placeholder="CM12345678AB"></div>
+        <div class="fg"><label class="lbl">Gender</label><select class="inp"><option>Male</option><option>Female</option></select></div>
+        <div class="fg"><label class="lbl">District</label><select class="inp"><option>Kampala</option><option>Wakiso</option><option>Gulu</option><option>Jinja</option><option>Mbale</option><option>Mbarara</option></select></div>
+        <div class="fg"><label class="lbl">Reports to</label><select class="inp"><option>CEO Monalisa</option><option>Admin Namugga Sarah</option><option>Manager Kato Peter</option><option>Manager Nakamya Judith</option></select></div>
+      </div>
+      <div class="fg"><label class="lbl">Physical address</label><input class="inp" placeholder="Sub county, parish, village"></div>
+      <div class="fg"><label class="lbl">Temporary password</label><input class="inp" type="text" value="Monalisa@2025" id="nuPass" readonly style="font-family:monospace"></div>
+      <div class="xs muted">A temporary password is generated automatically. The new user will be required to change it on first login.</div>
+    </div>
+    <div class="m-foot">
+      <button class="btn btn-o" onclick="closeM('mCreateUser')">Cancel</button>
+      <button class="btn btn-wa" onclick="shareNewUserWA()"><i class="fab fa-whatsapp"></i>Send login via WhatsApp</button>
+      <button class="btn btn-g" onclick="doCreateUser()">Create login</button>
+    </div>
+  </div>
+</div>
+
+<div class="mwrap" id="mAllocate">
+  <div class="modal">
+    <div class="m-hd"><h3>New stock allocation</h3><button class="m-x" onclick="closeM('mAllocate')"><i class="fas fa-times"></i></button></div>
+    <div class="m-body">
+      <div class="perm-banner" id="allocModalBanner" style="display:none"><i class="fas fa-circle-info"></i><span id="allocModalText"></span></div>
+      <div class="fg"><label class="lbl">From</label><select class="inp" id="allocFrom"><option>CEO Master Stock</option></select></div>
+      <div class="fg"><label class="lbl">To</label><select class="inp" id="allocTo"></select></div>
+      <div class="fg"><label class="lbl">Brand</label><select class="inp" id="allocBrand" onchange="loadAllocIMEI()"><option>Samsung</option><option>Tecno</option><option>Infinix</option><option>Itel</option></select></div>
+      <div class="fg"><label class="lbl">Select units (IMEI)</label><div id="allocList" style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:10px;max-height:130px;overflow-y:auto"></div></div>
+      <div class="fg"><label class="lbl">Reason (optional)</label><textarea class="inp" rows="2" placeholder="Why you are sending these units..."></textarea></div>
+    </div>
+    <div class="m-foot"><button class="btn btn-o" onclick="closeM('mAllocate')">Cancel</button><button class="btn btn-g" onclick="doSendAlloc()">Send allocation</button></div>
+  </div>
+</div>
+
+<div class="mwrap" id="mNewSale">
+  <div class="modal">
+    <div class="m-hd"><h3>Record a sale</h3><button class="m-x" onclick="closeM('mNewSale')"><i class="fas fa-times"></i></button></div>
+    <div class="m-body">
+      <div class="fg">
+        <label class="lbl">Sale type</label>
+        <div class="row">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12.5px"><input type="radio" name="st" value="cash" checked> Cash</label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12.5px"><input type="radio" name="st" value="finance"> Financed</label>
+        </div>
+      </div>
+      <div class="g2">
+        <div class="fg"><label class="lbl">Brand</label><select class="inp" id="saleBrand" onchange="loadSaleIMEI()"><option>Tecno</option><option>Samsung</option><option>Infinix</option><option>Itel</option></select></div>
+        <div class="fg"><label class="lbl">IMEI</label><select class="inp" id="saleIMEI"><option>352001234567890 — Tecno Spark 20 Pro</option></select></div>
+        <div class="fg"><label class="lbl">Customer name</label><input class="inp" placeholder="Full name" id="saleCustName" required></div>
+        <div class="fg"><label class="lbl">Customer phone</label><input class="inp" placeholder="+256 7XX XXX XXX" id="saleCustPhone" inputmode="tel" required></div>
+        <div class="fg"><label class="lbl">National ID</label><input class="inp" placeholder="CM12345678AB" id="saleCustNid"></div>
+        <div class="fg"><label class="lbl">Selling price (UGX)</label><input class="inp" type="number" placeholder="485000" id="salePrice" min="1000" required></div>
+      </div>
+    </div>
+    <div class="m-foot"><button class="btn btn-o" onclick="closeM('mNewSale')">Cancel</button><button class="btn btn-g" onclick="doSale()"><i class="fas fa-receipt"></i>Record and print receipt</button></div>
+  </div>
+</div>
+
+<div class="mwrap" id="mAddDevice">
+  <div class="modal">
+    <div class="m-hd"><h3>Add devices to inventory</h3><button class="m-x" onclick="closeM('mAddDevice')"><i class="fas fa-times"></i></button></div>
+    <div class="m-body">
+      <div class="perm-banner" id="addDevBanner" style="display:none"><i class="fas fa-circle-info"></i><span id="addDevText"></span></div>
+      <div class="tabs" id="addDevTabs">
+        <button class="tab on" onclick="setTab(this,'addDevTabs')">Single device</button>
+        <button class="tab" onclick="setTab(this,'addDevTabs')">Bulk IMEI list</button>
+        <button class="tab" onclick="setTab(this,'addDevTabs')">Excel import</button>
+      </div>
+      <div class="g2">
+        <div class="fg"><label class="lbl">Brand</label><select class="inp"><option>Samsung</option><option>Tecno</option><option>Infinix</option><option>Itel</option><option>Nokia</option><option>Redmi</option><option>Oppo</option><option>Vivo</option><option>Huawei</option></select></div>
+        <div class="fg"><label class="lbl">Model</label><input class="inp" placeholder="e.g. Galaxy A55 5G" required></div>
+        <div class="fg"><label class="lbl">RAM</label><select class="inp"><option>2GB</option><option>3GB</option><option>4GB</option><option>6GB</option><option>8GB</option><option>12GB</option></select></div>
+        <div class="fg"><label class="lbl">Storage</label><select class="inp"><option>32GB</option><option>64GB</option><option>128GB</option><option>256GB</option></select></div>
+        <div class="fg"><label class="lbl">Color</label><input class="inp" placeholder="e.g. Awesome Blue"></div>
+        <div class="fg"><label class="lbl">IMEI</label><input class="inp" placeholder="15-digit IMEI" maxlength="15" minlength="14" inputmode="numeric" pattern="[0-9]{14,15}" title="IMEI must be 14-15 digits" required></div>
+        <div class="fg"><label class="lbl">Purchase price (UGX)</label><input class="inp" type="number" placeholder="980000" min="1000" required></div>
+        <div class="fg"><label class="lbl">Selling price (UGX)</label><input class="inp" type="number" placeholder="1250000" min="1000" required></div>
+      </div>
+      <div class="fg"><label class="lbl">Goes into</label><select class="inp" id="addDevDest"></select></div>
+    </div>
+    <div class="m-foot"><button class="btn btn-o" onclick="closeM('mAddDevice')">Cancel</button><button class="btn btn-g" onclick="doAddDevice()">Add stock</button></div>
+  </div>
+</div>
+
+<div class="mwrap" id="mAddCustomer">
+  <div class="modal">
+    <div class="m-hd"><h3>Add customer</h3><button class="m-x" onclick="closeM('mAddCustomer')"><i class="fas fa-times"></i></button></div>
+    <div class="m-body">
+      <div class="g2">
+        <div class="fg"><label class="lbl">Full name</label><input class="inp" placeholder="Full name"></div>
+        <div class="fg"><label class="lbl">Phone</label><input class="inp" placeholder="+256 7XX XXX XXX"></div>
+        <div class="fg"><label class="lbl">National ID</label><input class="inp" placeholder="CM12345678AB"></div>
+        <div class="fg"><label class="lbl">District</label><select class="inp"><option>Kampala</option><option>Wakiso</option><option>Gulu</option><option>Jinja</option><option>Mbale</option><option>Mbarara</option></select></div>
+      </div>
+      <div class="fg"><label class="lbl">Village</label><input class="inp" placeholder="Village name"></div>
+    </div>
+    <div class="m-foot"><button class="btn btn-o" onclick="closeM('mAddCustomer')">Cancel</button><button class="btn btn-g" onclick="closeM('mAddCustomer');toast('Customer added')">Save customer</button></div>
+  </div>
+</div>
+
+<div class="mwrap" id="mImportFinance">
+  <div class="modal">
+    <div class="m-hd"><h3>Import financing records</h3><button class="m-x" onclick="closeM('mImportFinance')"><i class="fas fa-times"></i></button></div>
+    <div class="m-body">
+      <div class="fg"><label class="lbl">Financing partner</label><select class="inp"><option>Watu Credit</option><option>Mogo Finance</option><option>Asaak</option><option>Stanbic Bank</option><option>Centenary SACCO</option></select></div>
+      <div style="border:2px dashed var(--border2);border-radius:10px;padding:24px;text-align:center">
+        <i class="fas fa-file-csv green" style="font-size:26px;display:block;margin-bottom:8px"></i>
+        <div class="bold sm mb4">Choose a CSV or Excel file</div>
+        <div class="xs muted">342 rows will be matched automatically against existing IMEIs</div>
+      </div>
+    </div>
+    <div class="m-foot"><button class="btn btn-o" onclick="closeM('mImportFinance')">Cancel</button><button class="btn btn-g" onclick="closeM('mImportFinance');toast('Import started — 342 records queued')">Start import</button></div>
+  </div>
+</div>
+
+<div class="mwrap" id="mAddWarehouse">
+  <div class="modal">
+    <div class="m-hd"><h3>Add warehouse or branch</h3><button class="m-x" onclick="closeM('mAddWarehouse')"><i class="fas fa-times"></i></button></div>
+    <div class="m-body">
+      <div class="fg"><label class="lbl">Warehouse name</label><input class="inp" placeholder="e.g. Mbarara Western Branch"></div>
+      <div class="fg"><label class="lbl">Location</label><input class="inp" placeholder="Town, district"></div>
+      <div class="fg"><label class="lbl">Branch manager</label><select class="inp"><option>Kato Peter</option><option>Nakamya Judith</option><option>Ssebuliba Mark</option><option>Abaasa Robert</option></select></div>
+    </div>
+    <div class="m-foot"><button class="btn btn-o" onclick="closeM('mAddWarehouse')">Cancel</button><button class="btn btn-g" onclick="closeM('mAddWarehouse');toast('Warehouse added')">Create warehouse</button></div>
+  </div>
+</div>
+
+<div class="mwrap" id="mNewRecovery">
+  <div class="modal">
+    <div class="m-hd"><h3>Open a new recovery case</h3><button class="m-x" onclick="closeM('mNewRecovery')"><i class="fas fa-times"></i></button></div>
+    <div class="m-body">
+      <div class="fg"><label class="lbl">IMEI</label><input class="inp" placeholder="15-digit IMEI"></div>
+      <div class="fg"><label class="lbl">Currently with</label><input class="inp" placeholder="Agent or shop name"></div>
+      <div class="fg"><label class="lbl">Assign recovery officer</label><select class="inp"><option>Ssenyonga James</option><option>Nakayima Doris</option></select></div>
+      <div class="fg"><label class="lbl">Notes</label><textarea class="inp" rows="2" placeholder="Reason for opening this case"></textarea></div>
+    </div>
+    <div class="m-foot"><button class="btn btn-o" onclick="closeM('mNewRecovery')">Cancel</button><button class="btn btn-g" onclick="closeM('mNewRecovery');toast('Recovery case opened')">Open case</button></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<button class="fab" onclick="window.scrollTo({top:0,behavior:'smooth'})"><i class="fas fa-arrow-up"></i></button>
+<script>
+// ======================================================
+// FIREBASE — real-time sync across every device
+// ======================================================
+const firebaseConfig={
+  apiKey:"AIzaSyD3vlzCrAMJ6F2j1IPn9TRW8CiOJso0iGc",
+  authDomain:"monalisa-stock-erp.firebaseapp.com",
+  databaseURL:"https://monalisa-stock-erp-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId:"monalisa-stock-erp",
+  storageBucket:"monalisa-stock-erp.firebasestorage.app",
+  messagingSenderId:"982784559239",
+  appId:"1:982784559239:web:9710d243dc24b39f211022"
+};
+let fbApp=null, fbDb=null, fbReady=false;
+let fbDevices=null, fbAllocations=null, fbCustomers=null, fbAuditLog=null;
+
+function setSyncStatus(state){
+  const icon=document.getElementById('syncIcon');
+  const txt=document.getElementById('syncStatus');
+  const pill=document.getElementById('syncPill');
+  if(!icon||!txt||!pill)return;
+  if(state==='connecting'){
+    icon.className='fas fa-cloud-arrow-up';txt.textContent='Connecting...';
+    pill.style.background='rgba(245,166,35,.08)';pill.style.borderColor='rgba(245,166,35,.18)';pill.style.color='var(--amber)';
+  }else if(state==='online'){
+    icon.className='fas fa-cloud';txt.textContent='Synced live';
+    pill.style.background='rgba(0,200,150,.08)';pill.style.borderColor='rgba(0,200,150,.18)';pill.style.color='var(--green)';
+  }else if(state==='offline'){
+    icon.className='fas fa-cloud-slash';txt.textContent='Offline — local only';
+    pill.style.background='rgba(232,69,69,.08)';pill.style.borderColor='rgba(232,69,69,.18)';pill.style.color='var(--red)';
+  }
+}
+
+function initFirebase(){
+  try{
+    setSyncStatus('connecting');
+    fbApp=firebase.initializeApp(firebaseConfig);
+    fbDb=firebase.database();
+
+    // connection state
+    fbDb.ref('.info/connected').on('value',snap=>{
+      fbReady=!!snap.val();
+      setSyncStatus(fbReady?'online':'offline');
+    });
+
+    fbDevices=fbDb.ref('devices');
+    fbAllocations=fbDb.ref('allocations');
+    fbCustomers=fbDb.ref('customers');
+    fbAuditLog=fbDb.ref('auditLog');
+
+    // seed data only if database is empty (first ever run)
+    fbDevices.once('value').then(snap=>{
+      if(!snap.exists()){
+        const seed={};
+        devices.forEach(d=>seed[d.imei]=d);
+        fbDevices.set(seed);
+      }
+    });
+    fbCustomers.once('value').then(snap=>{
+      if(!snap.exists()){
+        const seed={};
+        customers.forEach((c,i)=>seed['c'+i]=c);
+        fbCustomers.set(seed);
+      }
+    });
+
+    // live listeners — any device's change reflects everywhere
+    fbDevices.on('value',snap=>{
+      const val=snap.val();
+      if(!val)return;
+      devices.length=0;
+      Object.values(val).forEach(d=>devices.push(d));
+      if(document.getElementById('pg-inventory')?.classList.contains('on')){filterInv()}
+    });
+    fbCustomers.on('value',snap=>{
+      const val=snap.val();
+      if(!val)return;
+      customers.length=0;
+      Object.values(val).forEach(c=>customers.push(c));
+      if(document.getElementById('pg-customers')?.classList.contains('on')){filterCustomers()}
+    });
+    fbAllocations.on('value',snap=>{
+      const val=snap.val()||{};
+      Object.keys(val).forEach(key=>{
+        const a=val[key];
+        const statusEl=document.getElementById('aStatus'+a.slot);
+        const cardEl=document.getElementById('allocCard'+a.slot);
+        const actEl=document.getElementById('aActions'+a.slot);
+        if(statusEl&&a.confirmed){
+          statusEl.textContent='Confirmed';statusEl.className='badge b-g';
+          if(cardEl)cardEl.style.borderLeftColor='var(--green)';
+          if(actEl)actEl.innerHTML='<span class="badge b-g"><i class="fas fa-check"></i> Confirmed '+(a.confirmedBy?('by '+a.confirmedBy+' '):'')+'at '+new Date(a.confirmedAt).toLocaleTimeString()+'</span>';
+        }
+      });
+    });
+
+    setTimeout(()=>{if(!fbReady)setSyncStatus('offline')},4000);
+  }catch(e){
+    console.error('Firebase init failed',e);
+    setSyncStatus('offline');
+  }
+}
+
+function fbLogAction(action,details){
+  if(!fbAuditLog||!fbReady)return;
+  fbAuditLog.push({
+    time:new Date().toLocaleTimeString(),
+    date:new Date().toLocaleDateString(),
+    user:currentUser?currentUser.name:'Unknown',
+    role:currentUser?currentUser.role:'-',
+    action,details,
+    ts:Date.now()
+  });
+}
+
+function fbUpdateDevice(imei,changes){
+  if(fbDevices&&fbReady){
+    fbDevices.child(imei).update(changes);
+  }else{
+    const d=devices.find(x=>x.imei===imei);
+    if(d)Object.assign(d,changes);
+  }
+}
+function fbAddDevice(device){
+  if(fbDevices&&fbReady){
+    fbDevices.child(device.imei).set(device);
+  }else{
+    devices.push(device);
+  }
+}
+
+// ======================================================
+// USER DIRECTORY — defines the real hierarchy
+// ======================================================
+const userDirectory={
+  'monalisa':{phone:'+256700000001',pass:'ceo123',name:'Monalisa C.',title:'Chief Executive Officer',role:'ceo',ava:'CM',cls:'ava-g',icon:'fa-crown',iconColor:'var(--amber)',reportsTo:null},
+  'namugga':{phone:'+256700000002',pass:'admin123',name:'Namugga Sarah',title:'Administrator — Operations',role:'admin',ava:'NS',cls:'ava-p',icon:'fa-user-shield',iconColor:'var(--violet)',reportsTo:'CEO Monalisa'},
+  'okello':{phone:'+256700000003',pass:'admin123',name:'Okello Timothy',title:'Administrator — Eastern Region',role:'admin',ava:'OT',cls:'ava-p',icon:'fa-user-shield',iconColor:'var(--violet)',reportsTo:'CEO Monalisa'},
+  'kato':{phone:'+256772100200',pass:'manager123',name:'Kato Peter',title:'Manager — Kampala',role:'manager',ava:'KP',cls:'ava-b',icon:'fa-briefcase',iconColor:'var(--blue)',reportsTo:'CEO Monalisa'},
+  'ssali':{phone:'+256782456789',pass:'tl12345',name:'Ssali Moses',title:'Team Leader — Gulu',role:'teamleader',ava:'SM',cls:'ava-b',icon:'fa-people-arrows',iconColor:'var(--blue)',reportsTo:'Manager Kato Peter'},
+  'apio':{phone:'+256756567890',pass:'agent123',name:'Apio Grace',title:'Agent — Gulu',role:'agent',ava:'AG',cls:'ava-e',icon:'fa-user',iconColor:'var(--green)',reportsTo:'TL Ssali Moses'},
+  'kibira':{phone:'+256701112233',pass:'shop123',name:'Kibira Electronics',title:'Shop Owner — Entebbe Road',role:'shopowner',ava:'KE',cls:'ava-e',icon:'fa-store',iconColor:'var(--green)',reportsTo:'Admin Namugga Sarah'},
+  'ssenyonga':{phone:'+256714789012',pass:'recovery123',name:'Ssenyonga James',title:'Recovery Officer',role:'recovery',ava:'SJ',cls:'ava-r',icon:'fa-shield-alt',iconColor:'var(--red)',reportsTo:'CEO Monalisa'},
+};
+
+// role permission matrix
+const perms={
+  ceo:{canCreateUsers:true,canDeleteUsers:true,allocateTo:['manager','teamleader','shopowner'],canAddStock:true,addStockNote:'You can add new stock straight into CEO master inventory.',seeAll:true},
+  admin:{canCreateUsers:false,canDeleteUsers:false,allocateTo:['manager','teamleader','shopowner'],canAddStock:true,addStockNote:'As an Administrator, new stock you add goes into CEO master inventory for the CEO to allocate, or you can allocate it directly to a manager, team leader, or shop owner.',seeAll:true},
+  manager:{canCreateUsers:false,canDeleteUsers:false,allocateTo:['agent'],canAddStock:false,addStockNote:'Managers cannot add brand-new stock. You can only allocate stock you have already received from the CEO or an Administrator, and only down to your own Agents.',seeAll:false},
+  teamleader:{canCreateUsers:false,canDeleteUsers:false,allocateTo:['agent'],canAddStock:false,addStockNote:'Team Leaders cannot add brand-new stock. You can only allocate stock you have already received, and only down to Agents under you.',seeAll:false},
+  agent:{canCreateUsers:false,canDeleteUsers:false,allocateTo:[],canAddStock:false,addStockNote:'Agents receive stock from a Manager or Team Leader. You cannot add new stock or allocate it onward — you can only sell it or return it.',seeAll:false},
+  shopowner:{canCreateUsers:false,canDeleteUsers:false,allocateTo:[],canAddStock:false,addStockNote:'Shop Owners receive stock from the CEO or an Administrator. You cannot add new stock or allocate it onward — you can only sell it.',seeAll:false},
+  recovery:{canCreateUsers:false,canDeleteUsers:false,allocateTo:[],canAddStock:false,addStockNote:'Recovery Officers work assigned cases and do not add or allocate stock.',seeAll:false},
+};
+
+const roleLabels={ceo:'Chief Executive Officer',admin:'Administrator',manager:'Manager',teamleader:'Team Leader',agent:'Agent',shopowner:'Shop Owner',recovery:'Recovery Officer'};
+
+let currentUser=null;
+let sessionStart=null;
+let inactivityTimer=null;
+let sessionTickInterval=null;
+
+// ======================================================
+// LOGIN SCREEN
+// ======================================================
+function renderDemoUsers(){
+  const wrap=document.getElementById('demoUsers');
+  const order=['monalisa','namugga','okello','kato','ssali','apio','kibira','ssenyonga'];
+  wrap.innerHTML=order.map(key=>{
+    const u=userDirectory[key];
+    return `<div class="demo-user-btn" onclick="quickLogin('${key}')">
+      <div class="ava ${u.cls}">${u.ava}</div>
+      <div class="info"><b>${u.name}</b><span>${u.title}</span></div>
+      <i class="fas fa-chevron-right arrow"></i>
+    </div>`;
+  }).join('');
+}
+
+function quickLogin(key){
+  const u=userDirectory[key];
+  document.getElementById('loginPhone').value=u.phone;
+  document.getElementById('loginPass').value=u.pass;
+  attemptLogin();
+}
+
+function togglePw(){
+  const f=document.getElementById('loginPass');
+  const i=document.getElementById('pwIcon');
+  if(f.type==='password'){f.type='text';i.className='fas fa-eye-slash'}
+  else{f.type='password';i.className='fas fa-eye'}
+}
+
+function attemptLogin(){
+  const phone=document.getElementById('loginPhone').value.trim();
+  const pass=document.getElementById('loginPass').value.trim();
+  const err=document.getElementById('loginErr');
+  const btn=document.getElementById('loginBtn');
+  const btnText=document.getElementById('loginBtnText');
+  err.classList.remove('show');
+
+  if(!phone||!pass){
+    document.getElementById('loginErrText').textContent='Please enter both phone number and password.';
+    err.classList.add('show');
+    return;
+  }
+
+  const match=Object.values(userDirectory).find(u=>u.phone===phone&&u.pass===pass);
+
+  btn.disabled=true;
+  btnText.textContent='Checking credentials...';
+
+  setTimeout(()=>{
+    if(!match){
+      btn.disabled=false;
+      btnText.textContent='Sign in';
+      document.getElementById('loginErrText').textContent='Incorrect phone number or password. Demo tip: tap a demo account below instead.';
+      err.classList.add('show');
+      return;
+    }
+    btnText.textContent='Welcome back...';
+    setTimeout(()=>{
+      logUserIn(match);
+    },500);
+  },650);
+}
+
+function logUserIn(u){
+  currentUser=u;
+  sessionStart=Date.now();
+  document.getElementById('loginScreen').classList.remove('on');
+  bootApp();
+}
+
+// ======================================================
+// LOCK SCREEN / SESSION TIMEOUT
+// ======================================================
+function resetInactivity(){
+  clearTimeout(inactivityTimer);
+  if(!currentUser)return;
+  inactivityTimer=setTimeout(()=>{
+    document.getElementById('lockScreen').classList.add('on');
+  },5*60*1000); // 5 minutes
+}
+['mousemove','keydown','click','scroll','touchstart'].forEach(evt=>{
+  document.addEventListener(evt,resetInactivity);
+});
+
+function unlockSession(){
+  const p=document.getElementById('unlockPass').value;
+  if(currentUser&&p===currentUser.pass){
+    document.getElementById('lockScreen').classList.remove('on');
+    document.getElementById('unlockPass').value='';
+    toast('Welcome back, '+currentUser.name.split(' ')[0]);
+    resetInactivity();
+  }else{
+    toast('Incorrect password','var(--red)');
+  }
+}
+function forceLogout(){
+  document.getElementById('lockScreen').classList.remove('on');
+  doLogout();
+}
+
+function startSessionTimer(){
+  clearInterval(sessionTickInterval);
+  sessionTickInterval=setInterval(()=>{
+    if(!sessionStart)return;
+    const mins=Math.floor((Date.now()-sessionStart)/60000);
+    const el=document.getElementById('sessionTimer');
+    if(el)el.textContent='Active '+mins+'m';
+  },10000);
+}
+
+// ======================================================
+// LOGOUT
+// ======================================================
+function toggleLogoutMenu(){document.getElementById('logoutMenu').classList.toggle('open')}
+function closeLogoutMenu(){document.getElementById('logoutMenu').classList.remove('open')}
+document.addEventListener('click',e=>{
+  if(!e.target.closest('#sbUser')&&!e.target.closest('#logoutMenu'))closeLogoutMenu();
+});
+function doLogout(){
+  closeLogoutMenu();
+  document.getElementById('app').classList.remove('on');
+  document.getElementById('app').style.display='none';
+  currentUser=null;
+  sessionStart=null;
+  clearInterval(sessionTickInterval);
+  clearTimeout(inactivityTimer);
+  document.getElementById('loginPhone').value='';
+  document.getElementById('loginPass').value='';
+  document.getElementById('loginScreen').classList.add('on');
+}
+
+// ======================================================
+// APPLY PERMISSIONS THROUGHOUT THE UI
+// ======================================================
+function applyPermissions(){
+  const u=currentUser;
+  const p=perms[u.role];
+
+  document.getElementById('sbName').textContent=u.name;
+  document.getElementById('sbRole').textContent=u.title;
+  const av=document.getElementById('sbAva');
+  av.textContent=u.ava;av.className='ava '+u.cls;
+  const ri=document.getElementById('roleIco').querySelector('i');
+  ri.className='fas '+u.icon;ri.style.color=u.iconColor;
+
+  // nav visibility: CEO-only sections
+  const ceoOnlyNav=['nav-users','nav-auditlogs','nav-security','nav-integrations','nav-settings'];
+  const ceoAdminNav=['nav-ceo'];
+  ceoOnlyNav.forEach(id=>{
+    const n=document.getElementById(id);
+    if(n)n.style.display=(u.role==='ceo'||u.role==='admin')?'flex':'none';
+  });
+  ceoAdminNav.forEach(id=>{
+    const n=document.getElementById(id);
+    if(n)n.style.display=(u.role==='ceo'||u.role==='admin')?'flex':'none';
+  });
+
+  // Add Stock button on inventory page
+  const addBtn=document.getElementById('addStockBtn');
+  const invBanner=document.getElementById('invPermBanner');
+  const invText=document.getElementById('invPermText');
+  if(addBtn){
+    addBtn.style.display=p.canAddStock?'inline-flex':'none';
+  }
+  if(invBanner&&invText){
+    if(!p.canAddStock){
+      invBanner.style.display='flex';
+      invText.textContent=p.addStockNote;
+    }else{
+      invBanner.style.display='none';
+    }
+  }
+
+  // Allocation page permission banner + button
+  const allocBanner=document.getElementById('allocPermBanner');
+  const allocText=document.getElementById('allocPermText');
+  const newAllocBtn=document.getElementById('newAllocBtn');
+  if(allocBanner&&allocText){
+    if(p.allocateTo.length===0){
+      allocBanner.style.display='flex';
+      allocText.textContent=p.addStockNote.replace('add new stock','allocate stock')+' You can only confirm receipt and then sell or return your stock.';
+      if(newAllocBtn)newAllocBtn.style.display='none';
+    }else{
+      allocBanner.style.display='none';
+      if(newAllocBtn)newAllocBtn.style.display='inline-flex';
+    }
+  }
+
+  // Users page
+  const createUserBtn=document.getElementById('createUserBtn');
+  const usersBanner=document.getElementById('usersPermBanner');
+  if(createUserBtn){
+    createUserBtn.style.display=(u.role==='ceo')?'inline-flex':(u.role==='admin'?'inline-flex':'none');
+    if(u.role==='admin')createUserBtn.innerHTML='<i class="fas fa-user-plus"></i>Request new login';
+  }
+  if(usersBanner){
+    usersBanner.style.display=(u.role==='ceo')?'none':'flex';
+  }
+
+  updateGreeting();
+  buildAllocateOptions();
+}
+
+function buildAllocateOptions(){
+  const u=currentUser;
+  const p=perms[u.role];
+  const toSelect=document.getElementById('allocTo');
+  if(!toSelect)return;
+  const options={
+    manager:['Manager Kato Peter','Manager Nakamya Judith','Manager Ssebuliba Mark','Manager Abaasa Robert'],
+    teamleader:['TL Ssali Moses (Gulu)','TL Kasozi Henry (Jinja)'],
+    shopowner:['Shop Kibira Electronics','Shop Mawanda Phones'],
+    agent:['Agent Apio Grace','Agent Mukasa Ronald','Agent Nakato Sarah','Agent Otim Charles'],
+  };
+  let html='';
+  p.allocateTo.forEach(role=>{
+    (options[role]||[]).forEach(name=>html+=`<option>${name}</option>`);
+  });
+  toSelect.innerHTML=html||'<option>No eligible recipients for your role</option>';
+
+  const banner=document.getElementById('allocModalBanner');
+  const text=document.getElementById('allocModalText');
+  if(banner&&text){
+    if(u.role==='manager'||u.role==='teamleader'){
+      banner.style.display='flex';
+      text.textContent='You can only allocate stock to Agents under you, and only from units you already hold.';
+    }else{
+      banner.style.display='none';
+    }
+  }
+
+  const addDevDest=document.getElementById('addDevDest');
+  if(addDevDest){
+    addDevDest.innerHTML=u.role==='ceo'
+      ? '<option>CEO Master Inventory</option>'
+      : '<option>CEO Master Inventory (pending CEO review)</option><option>Allocate directly to a Manager</option><option>Allocate directly to a Shop Owner</option>';
+    const addDevBanner=document.getElementById('addDevBanner');
+    const addDevText=document.getElementById('addDevText');
+    if(addDevBanner&&u.role==='admin'){
+      addDevBanner.style.display='flex';
+      addDevText.textContent='As an Administrator, stock you add can go to CEO master inventory or be allocated immediately — your choice below.';
+    }
+  }
+}
+
+// ======================================================
+// NAV
+// ======================================================
+const titles={dashboard:'Dashboard',ceo:'CEO Command Center',inventory:'Inventory',allocation:'Stock Allocation',sales:'Sales',customers:'Customers',financing:'Financing Integration',recovery:'Recovery Management',commissions:'Commissions',performance:'Performance Center',reports:'Reports',uganda:'Uganda Analytics',warehouses:'Warehouses',users:'User Management',auditlogs:'Audit Logs',security:'Security Center',integrations:'Integrations',settings:'Settings'};
+
+function go(id){
+  // block CEO-only pages for non-ceo/admin
+  const restricted=['ceo','users','auditlogs','security','integrations','settings'];
+  if(restricted.includes(id)&&currentUser&&!['ceo','admin'].includes(currentUser.role)){
+    toast("You don't have access to this section",'var(--red)');
+    return;
+  }
+  document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
+  document.querySelectorAll('.nav').forEach(n=>n.classList.remove('on'));
+  const pg=document.getElementById('pg-'+id);
+  const nv=document.getElementById('nav-'+id);
+  if(pg)pg.classList.add('on');
+  if(nv)nv.classList.add('on');
+  document.getElementById('pageTitle').textContent=titles[id]||id;
+  window.scrollTo({top:0,behavior:'smooth'});
+  closeSb();
+  if(id==='inventory')renderGrid(devices),renderTable(devices);
+  if(id==='customers')renderCustomers(customers);
+  if(id==='users')renderUsers('');
+  setTimeout(()=>buildCharts(id),60);
+}
+
+function toggleSb(){document.getElementById('sb').classList.toggle('open');document.getElementById('sbOverlay').classList.toggle('on')}
+function closeSb(){document.getElementById('sb').classList.remove('open');document.getElementById('sbOverlay').classList.remove('on')}
+
+function setTab(el,grp){
+  const cont=grp?document.getElementById(grp):el.closest('.tabs');
+  if(cont)cont.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+  el.classList.add('on');
+}
+
+function openM(id){
+  document.getElementById(id).classList.add('open');
+  if(id==='mAllocate')loadAllocIMEI();
+  if(id==='mAddDevice')buildAllocateOptions();
+}
+function closeM(id){document.getElementById(id).classList.remove('open')}
+document.querySelectorAll('.mwrap').forEach(m=>m.addEventListener('click',function(e){if(e.target===this)this.classList.remove('open')}));
+
+function presetRole(role){
+  setTimeout(()=>{const s=document.getElementById('nuRole');if(s)s.value=role},80);
+}
+
+function toggleNotif(){document.getElementById('notifPanel').classList.toggle('open')}
+function clearNotifs(){document.querySelectorAll('.ni.unread').forEach(n=>n.classList.remove('unread'));toast('All notifications cleared')}
+document.addEventListener('click',e=>{if(!e.target.closest('#notifPanel')&&!e.target.closest('.ico'))document.getElementById('notifPanel').classList.remove('open')});
+
+function toggleFS(){if(!document.fullscreenElement)document.documentElement.requestFullscreen().catch(()=>{});else document.exitFullscreen()}
+
+function toast(msg,c='var(--green)'){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.style.borderColor=c;
+  t.style.opacity='1';t.style.transform='translateX(-50%) translateY(0)';
+  clearTimeout(t._t);
+  t._t=setTimeout(()=>{t.style.opacity='0';t.style.transform='translateX(-50%) translateY(20px)'},2800);
+}
+
+// ======================================================
+// SECURITY TOGGLES
+// ======================================================
+function toggleSetting(el){
+  el.classList.toggle('on');
+  toast(el.classList.contains('on')?'Setting turned on':'Setting turned off');
+}
+
+// ======================================================
+// WHATSAPP + EMAIL INTEGRATIONS
+// ======================================================
+const COMPANY_WHATSAPP='256703953711';
+const COMPANY_EMAIL='kabuusumonalisa@gmail.com';
+
+function openWA(message){
+  const url='https://wa.me/'+COMPANY_WHATSAPP+'?text='+encodeURIComponent(message);
+  window.open(url,'_blank');
+}
+function openMail(subject,body){
+  const url='mailto:'+COMPANY_EMAIL+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
+  window.location.href=url;
+}
+
+function testWA(){
+  openWA('Hello Monalisa, this is a test message from Monalisa Stock ERP. WhatsApp integration is working correctly.');
+  toast('Opening WhatsApp...');
+}
+function testEmail(){
+  openMail('Test message from Monalisa Stock ERP','Hello Monalisa,\n\nThis is a test email confirming the integration between Monalisa Stock ERP and your inbox is working correctly.\n\nSent by: '+(currentUser?currentUser.name:'System'));
+  toast('Opening your email app...');
+}
+
+function sendReceiptWA(){
+  const nr=document.getElementById('r-nr').textContent;
+  const cust=document.getElementById('r-cust').textContent;
+  const phone=document.getElementById('r-phone').textContent;
+  const brand=document.getElementById('r-brand').textContent;
+  const model=document.getElementById('r-model').textContent;
+  const imei=document.getElementById('r-imei').textContent;
+  const total=document.getElementById('r-total').textContent;
+  const agent=document.getElementById('r-agent').textContent;
+  const msg=`New sale recorded — ${nr}\n\nCustomer: ${cust} (${phone})\nDevice: ${brand} ${model}\nIMEI: ${imei}\nAmount: ${total}\nSold by: ${agent}\n\nMonalisa Tech Solutions`;
+  openWA(msg);
+  toast('Opening WhatsApp with receipt...');
+}
+function sendReceiptEmail(){
+  const nr=document.getElementById('r-nr').textContent;
+  const cust=document.getElementById('r-cust').textContent;
+  const phone=document.getElementById('r-phone').textContent;
+  const brand=document.getElementById('r-brand').textContent;
+  const model=document.getElementById('r-model').textContent;
+  const imei=document.getElementById('r-imei').textContent;
+  const total=document.getElementById('r-total').textContent;
+  const agent=document.getElementById('r-agent').textContent;
+  const body=`Receipt: ${nr}\n\nCustomer: ${cust}\nPhone: ${phone}\nDevice: ${brand} ${model}\nIMEI: ${imei}\nAmount: ${total}\nSold by: ${agent}\n\nMonalisa Tech Solutions, Kampala, Uganda`;
+  openMail('Receipt '+nr,body);
+  toast('Opening your email app...');
+}
+function alertRecoveryWA(model,imei,holder,days){
+  const msg=`Recovery alert\n\nDevice: ${model}\nIMEI: ${imei}\nCurrently with: ${holder}\nDays in field: ${days}\n\nThis unit needs attention. Sent from Monalisa Stock ERP.`;
+  openWA(msg);
+  toast('Opening WhatsApp...');
+}
+function emailReport(reportName){
+  openMail(reportName+' — Monalisa Stock ERP','Hello Monalisa,\n\nPlease find attached the '+reportName.toLowerCase()+' for your review.\n\n(In the live system this would include the generated PDF as an attachment.)\n\nRegards,\nMonalisa Stock ERP');
+  toast('Opening your email app...');
+}
+function shareNewUserWA(){
+  const name=document.getElementById('nuName').value||'New user';
+  const phone=document.getElementById('nuPhone').value||'their phone number';
+  const role=document.getElementById('nuRole').value;
+  const pass=document.getElementById('nuPass').value;
+  const msg=`Welcome to Monalisa Stock ERP\n\nHello ${name}, your account has been created.\n\nRole: ${role}\nLogin phone: ${phone}\nTemporary password: ${pass}\n\nPlease change your password after your first login.`;
+  openWA(msg);
+  toast('Opening WhatsApp to send credentials...');
+}
+
+// ======================================================
+// DEVICE DATA
+// ======================================================
+const devices=[
+  {brand:'Samsung',model:'Galaxy A55 5G',ram:'8GB',storage:'128GB',color:'Awesome Blue',imei:'357123459871234',buy:980000,sell:1250000,holder:'Agent Nalwoga',loc:'Kamwokya, Kampala',age:32,status:'allocated'},
+  {brand:'Tecno',model:'Camon 30 Pro',ram:'12GB',storage:'256GB',color:'Black',imei:'352987650123456',buy:680000,sell:895000,holder:'Manager Kato Peter',loc:'Kampala Central',age:3,status:'allocated'},
+  {brand:'Infinix',model:'Note 40 Pro 5G',ram:'8GB',storage:'256GB',color:'Gold',imei:'359001234567890',buy:590000,sell:780000,holder:'TL Ssali Moses',loc:'Gulu North',age:18,status:'allocated'},
+  {brand:'Itel',model:'A70 Pro',ram:'4GB',storage:'64GB',color:'Purple',imei:'356789012345678',buy:240000,sell:320000,holder:'Agent Apio Grace',loc:'Gulu',age:5,status:'allocated'},
+  {brand:'Redmi',model:'Note 13 Pro 5G',ram:'8GB',storage:'256GB',color:'Ocean Teal',imei:'354123456789012',buy:740000,sell:950000,holder:'CEO Stock',loc:'CEO Warehouse',age:7,status:'ceo'},
+  {brand:'Nokia',model:'G60 5G',ram:'6GB',storage:'128GB',color:'Black',imei:'351234567890123',buy:560000,sell:720000,holder:'Shop Kibira',loc:'Entebbe Road',age:15,status:'allocated'},
+  {brand:'Oppo',model:'A78 5G',ram:'8GB',storage:'128GB',color:'Glowing Black',imei:'358901234567890',buy:640000,sell:850000,holder:'Agent Nakato Sarah',loc:'Jinja',age:2,status:'allocated'},
+  {brand:'Vivo',model:'Y36 5G',ram:'8GB',storage:'128GB',color:'Meteorite Black',imei:'355678901234567',buy:610000,sell:780000,holder:'Agent Ssempijja',loc:'Mbarara',age:24,status:'allocated'},
+  {brand:'Samsung',model:'Galaxy A15',ram:'4GB',storage:'128GB',color:'Light Blue',imei:'358001234567890',buy:420000,sell:580000,holder:'CEO Stock',loc:'CEO Warehouse',age:9,status:'ceo'},
+  {brand:'Huawei',model:'Nova 12 SE',ram:'8GB',storage:'256GB',color:'Green',imei:'356001234567890',buy:710000,sell:920000,holder:'CEO Stock',loc:'CEO Warehouse',age:4,status:'ceo'},
+  {brand:'Tecno',model:'Spark 20 Pro',ram:'8GB',storage:'128GB',color:'Magic Skin White',imei:'352001234567890',buy:370000,sell:485000,holder:'Agent Apio Grace',loc:'Gulu',age:6,status:'allocated'},
+  {brand:'Itel',model:'P55 Plus',ram:'4GB',storage:'64GB',color:'Diamond Black',imei:'359112233445566',buy:210000,sell:285000,holder:'CEO Stock',loc:'CEO Warehouse',age:11,status:'ceo'},
+];
+
+const customers=[
+  {name:'Mukasa David',phone:'+256 772 345 678',nid:'CM98765432BC',district:'Kampala',village:'Kamwokya',agent:'Apio Grace',purchases:2,last:'18 Jun 2025'},
+  {name:'Namulondo Joyce',phone:'+256 701 234 567',nid:'NJ72345678AB',district:'Wakiso',village:'Nansana',agent:'Mukasa Ronald',purchases:1,last:'18 Jun 2025'},
+  {name:'Ssekandi Fred',phone:'+256 782 901 234',nid:'SF61238976CD',district:'Jinja',village:'Mpumudde',agent:'Nakato Sarah',purchases:3,last:'18 Jun 2025'},
+  {name:'Kiggundu Bashir',phone:'+256 756 123 890',nid:'KB55123456EF',district:'Kampala',village:'Bwaise',agent:'Otim Charles',purchases:1,last:'18 Jun 2025'},
+  {name:'Nalwanga Rose',phone:'+256 714 567 890',nid:'NR44987654GH',district:'Mbarara',village:'Kakiika',agent:'Namukasa Lydia',purchases:2,last:'17 Jun 2025'},
+  {name:'Byaruhanga Tom',phone:'+256 700 456 789',nid:'BT38765432IJ',district:'Gulu',village:'Layibi',agent:'Apio Grace',purchases:4,last:'16 Jun 2025'},
+];
+
+const usersList=[
+  {name:'Namugga Sarah',role:'Administrator',phone:'+256 700 000 002',district:'Kampala',reportsTo:'CEO Monalisa',joined:'Feb 2024',status:'Active'},
+  {name:'Okello Timothy',role:'Administrator',phone:'+256 700 000 003',district:'Mbale',reportsTo:'CEO Monalisa',joined:'Apr 2024',status:'Active'},
+  {name:'Kato Peter',role:'Manager',phone:'+256 772 100 200',district:'Kampala',reportsTo:'CEO Monalisa',joined:'Jan 2024',status:'Active'},
+  {name:'Nakamya Judith',role:'Manager',phone:'+256 701 300 400',district:'Jinja',reportsTo:'CEO Monalisa',joined:'Mar 2024',status:'Active'},
+  {name:'Ssali Moses',role:'Team Leader',phone:'+256 782 456 789',district:'Gulu',reportsTo:'Kato Peter',joined:'May 2024',status:'Active'},
+  {name:'Apio Grace',role:'Agent',phone:'+256 756 567 890',district:'Gulu',reportsTo:'Ssali Moses',joined:'Jun 2024',status:'Active'},
+  {name:'Kibira Electronics',role:'Shop Owner',phone:'+256 701 112 233',district:'Kampala',reportsTo:'Namugga Sarah',joined:'Jul 2024',status:'Active'},
+  {name:'Ssempijja Brian',role:'Agent',phone:'+256 756 890 123',district:'Mbarara',reportsTo:'Ssebuliba Mark',joined:'Sep 2024',status:'Suspended'},
+  {name:'Ssenyonga James',role:'Recovery Officer',phone:'+256 714 789 012',district:'Kampala',reportsTo:'CEO Monalisa',joined:'Aug 2024',status:'Active'},
+];
+
+const imeiByBrand={
+  Samsung:['358712345012345 — Galaxy A55 5G','358001234567890 — Galaxy A15','356123456789012 — Galaxy A05s'],
+  Tecno:['352987650123456 — Camon 30 Pro','352001234567890 — Spark 20 Pro','352112233445566 — Pop 8 Pro'],
+  Infinix:['359001234567890 — Note 40 Pro','359112233445566 — Hot 40i','359223344556677 — Smart 8'],
+  Itel:['356789012345678 — A70 Pro','356890123456789 — P55 Plus'],
+};
+
+function ageClass(d){return d.age<=9?'age-g':d.age<=20?'age-a':'age-r'}
+function ageBadge(d){return d.age<=9?'b-g':d.age<=20?'b-a':'b-r'}
+function ageWord(d){return d.age<=9?'Good':d.age<=20?'Watch':'Aged'}
+
+function renderGrid(list){
+  const g=document.getElementById('deviceGrid');if(!g)return;
+  g.innerHTML=list.map(d=>`
+    <div class="dcard" onclick="openDetail('${d.brand} ${d.model}','${d.imei}','${d.holder}','${d.age}','${d.loc}')">
+      <div class="dcard-top"><div class="dcard-icon">📱</div><span class="age ${ageClass(d)}">${d.age}d</span></div>
+      <div class="dcard-brand">${d.brand}</div>
+      <div class="dcard-model">${d.model}</div>
+      <div class="dcard-specs"><span class="chip">${d.ram}</span><span class="chip">${d.storage}</span><span class="chip">${d.color}</span></div>
+      <div class="dcard-foot"><div class="dcard-price">UGX ${d.sell.toLocaleString()}</div></div>
+      <div class="dcard-holder">With: ${d.holder}</div>
+    </div>`).join('');
+}
+function renderTable(list){
+  const tb=document.getElementById('invTbody');if(!tb)return;
+  tb.innerHTML=list.map(d=>`
+    <tr style="cursor:pointer" onclick="openDetail('${d.brand} ${d.model}','${d.imei}','${d.holder}','${d.age}','${d.loc}')">
+      <td class="mono">${d.imei}</td>
+      <td><span class="bold">${d.brand}</span><br><span class="xs muted">${d.model}</span></td>
+      <td>${d.ram} / ${d.storage}</td>
+      <td>UGX ${d.buy.toLocaleString()}</td>
+      <td class="bold">UGX ${d.sell.toLocaleString()}</td>
+      <td>${d.holder}</td>
+      <td><span class="age ${ageClass(d)}">${d.age}d</span></td>
+      <td><span class="badge ${ageBadge(d)}">${ageWord(d)}</span></td>
+    </tr>`).join('');
+}
+function filterInv(){
+  const b=document.getElementById('invBrand').value;
+  const a=document.getElementById('invAge').value;
+  let l=devices;
+  if(b)l=l.filter(d=>d.brand===b);
+  if(a==='g')l=l.filter(d=>d.age<=9);
+  else if(a==='a')l=l.filter(d=>d.age>=10&&d.age<=20);
+  else if(a==='r')l=l.filter(d=>d.age>20);
+  renderGrid(l);renderTable(l);
+}
+function filterStatus(s){
+  let l=devices;
+  if(s==='ceo')l=l.filter(d=>d.status==='ceo');
+  else if(s==='allocated')l=l.filter(d=>d.status==='allocated');
+  else if(s==='aged')l=l.filter(d=>d.age>20);
+  renderGrid(l);renderTable(l);
+}
+
+function renderCustomers(list){
+  const tb=document.getElementById('custTbody');if(!tb)return;
+  tb.innerHTML=list.map(c=>`
+    <tr>
+      <td class="bold">${c.name}</td><td>${c.phone}</td><td class="mono">${c.nid}</td><td>${c.district}</td><td>${c.village}</td><td>${c.agent}</td>
+      <td><span class="badge b-b">${c.purchases}</span></td><td>${c.last}</td>
+      <td><button class="btn btn-wa btn-sm" onclick="openWA('Hello ${c.name}, this is Monalisa Tech Solutions following up on your purchase. ')"><i class="fab fa-whatsapp"></i></button></td>
+    </tr>`).join('');
+}
+function filterCustomers(){
+  const q=(document.getElementById('custSearch').value||'').toLowerCase();
+  const d=document.getElementById('custDistrict').value;
+  let l=customers;
+  if(q)l=l.filter(c=>c.name.toLowerCase().includes(q)||c.phone.includes(q)||c.nid.toLowerCase().includes(q));
+  if(d)l=l.filter(c=>c.district===d);
+  renderCustomers(l);
+}
+
+function renderUsers(roleFilter){
+  const tb=document.getElementById('usersTbody');if(!tb)return;
+  let l=usersList;
+  if(roleFilter)l=l.filter(u=>u.role===roleFilter);
+  const canManage=currentUser&&currentUser.role==='ceo';
+  tb.innerHTML=l.map(u=>{
+    const roleBadgeClass=u.role==='Administrator'?'b-v':u.role==='Manager'?'b-b':u.role==='Team Leader'?'b-v':u.role==='Recovery Officer'?'b-r':'b-g';
+    const statusBadge=u.status==='Active'?'b-g':'b-a';
+    return `<tr>
+      <td class="bold">${u.name}</td>
+      <td><span class="badge ${roleBadgeClass}">${u.role}</span></td>
+      <td>${u.phone}</td><td>${u.district}</td><td>${u.reportsTo}</td><td>${u.joined}</td>
+      <td><span class="badge ${statusBadge}">${u.status}</span></td>
+      <td>${canManage?'<button class="btn btn-ghost btn-sm" onclick="toast(\'Opening user record\')">Manage</button>':'<span class="xs muted">View only</span>'}</td>
+    </tr>`;
+  }).join('');
+}
+function filterUsers(role){renderUsers(role)}
+
+// ======================================================
+// DEVICE DETAIL PANEL
+// ======================================================
+function openDetail(model,imei,holder,age,loc){
+  document.getElementById('dp-title').textContent=model;
+  const ac=parseInt(age)>20?'age-r':parseInt(age)>9?'age-a':'age-g';
+  const canReallocate=currentUser&&perms[currentUser.role].allocateTo.length>0;
+  document.getElementById('dp-body').innerHTML=`
+    <div style="text-align:center;background:var(--card2);border-radius:10px;padding:24px;margin-bottom:16px">
+      <div style="font-size:56px;margin-bottom:8px">📱</div>
+      <div class="bold" style="font-size:17px">${model}</div>
+      <div class="xs muted mt4" style="font-family:monospace">${imei}</div>
+      <span class="age ${ac} mt8" style="display:inline-flex;margin-top:8px">${age} days in field</span>
+    </div>
+    <div class="card-sm mb12">
+      <div class="hd2">Current location</div>
+      <div class="row mb8"><i class="fas fa-user green"></i><span class="bold">${holder}</span></div>
+      <div class="row"><i class="fas fa-map-marker-alt muted"></i><span class="xs muted">${loc}</span></div>
+    </div>
+    <div class="card-sm mb12">
+      <div class="hd2">Movement history</div>
+      <div class="tl">
+        <div class="tl-item"><div class="tl-dot" style="background:var(--green)"></div><div class="tl-when">15 May 2025</div><div class="tl-what">Added to CEO stock</div><div class="tl-who">Stock intake from supplier</div></div>
+        <div class="tl-item"><div class="tl-dot" style="background:var(--blue)"></div><div class="tl-when">20 May 2025</div><div class="tl-what">CEO to Manager Kato Peter</div><div class="tl-who">Allocation, confirmed both sides</div></div>
+        <div class="tl-item"><div class="tl-dot" style="background:var(--blue)"></div><div class="tl-when">22 May 2025</div><div class="tl-what">Manager to TL Ssali Moses</div><div class="tl-who">Team allocation</div></div>
+        <div class="tl-item"><div class="tl-dot" style="background:${parseInt(age)>20?'var(--red)':'var(--amber)'}"></div><div class="tl-when">25 May 2025</div><div class="tl-what">TL to ${holder}</div><div class="tl-who">${parseInt(age)>20?'Field — AGED, recovery triggered':'Field assignment — in progress'}</div></div>
+      </div>
+    </div>
+    <div class="row">
+      ${canReallocate?`<button class="btn btn-g btn-sm" onclick="toast('Allocation form opened');closeDetail();openM('mAllocate')">Reallocate</button>`:`<button class="btn btn-ghost btn-sm" disabled title="Your role cannot reallocate stock">Reallocate (no permission)</button>`}
+      <button class="btn btn-danger btn-sm" onclick="toast('Recovery case created','var(--red)');closeDetail()">Start recovery</button>
+      <button class="btn btn-wa btn-sm" onclick="openWA('Device check: ${model}, IMEI ${imei}, currently with ${holder}, ${age} days in field.')"><i class="fab fa-whatsapp"></i></button>
+    </div>`;
+  document.getElementById('dOverlay').classList.add('open');
+  document.getElementById('dPanel').classList.add('open');
+}
+function closeDetail(){
+  document.getElementById('dOverlay').classList.remove('open');
+  document.getElementById('dPanel').classList.remove('open');
+}
+
+// ======================================================
+// SEARCH
+// ======================================================
+const sData=[
+  {tag:'IMEI',title:'357123459871234',sub:'Samsung Galaxy A55 5G, Agent Nalwoga, 32 days',fn:()=>openDetail('Samsung Galaxy A55 5G','357123459871234','Agent Nalwoga','32','Kampala')},
+  {tag:'IMEI',title:'352987650123456',sub:'Tecno Camon 30 Pro, Manager Kato, 3 days',fn:()=>openDetail('Tecno Camon 30 Pro','352987650123456','Manager Kato',3,'Kampala')},
+  {tag:'Customer',title:'Mukasa David',sub:'Kamwokya, Kampala, Agent Apio Grace',fn:()=>go('customers')},
+  {tag:'Customer',title:'Namulondo Joyce',sub:'Nansana, Wakiso',fn:()=>go('customers')},
+  {tag:'Receipt',title:'RCP-20250618-0047',sub:'Tecno Spark 20 Pro, UGX 485,000, Watu Credit',fn:()=>go('sales')},
+  {tag:'Agent',title:'Apio Grace',sub:'Gulu, TL Ssali Moses, 24 units sold',fn:()=>go('performance')},
+  {tag:'Recovery',title:'Vivo Y36 5G',sub:'Agent Ssempijja, Mbarara, 24 days',fn:()=>go('recovery')},
+  {tag:'Manager',title:'Kato Peter',sub:'Kampala, 124 units, UGX 98.4M',fn:()=>go('performance')},
+  {tag:'Admin',title:'Namugga Sarah',sub:'Operations Administrator, Kampala HQ',fn:()=>go('users')},
+];
+function doSearch(q){
+  const p=document.getElementById('searchPanel');
+  if(!q){p.classList.remove('open');return}
+  const r=sData.filter(d=>d.title.toLowerCase().includes(q.toLowerCase())||d.sub.toLowerCase().includes(q.toLowerCase()));
+  if(!r.length){p.innerHTML='<div style="padding:14px;text-align:center;color:var(--muted);font-size:12.5px">Nothing found for "'+q+'"</div>';p.classList.add('open');return}
+  p.innerHTML=r.slice(0,6).map(x=>`<div class="sr" onclick="sData.find(d=>d.title==='${x.title}').fn();hideSP()"><div class="sr-tag">${x.tag}</div><div class="sr-title">${x.title}</div><div class="sr-sub">${x.sub}</div></div>`).join('');
+  p.classList.add('open');
+}
+function showSP(){if(document.getElementById('sInput').value)document.getElementById('searchPanel').classList.add('open')}
+function hideSP(){document.getElementById('searchPanel').classList.remove('open')}
+
+// ======================================================
+// ACTIONS
+// ======================================================
+function confirmAlloc(n){
+  const card=document.getElementById('allocCard'+n);
+  const status=document.getElementById('aStatus'+n);
+  const actions=document.getElementById('aActions'+n);
+  card.style.borderLeftColor='var(--green)';
+  status.textContent='Confirmed';status.className='badge b-g';
+  const who=currentUser?currentUser.name:'';
+  actions.innerHTML='<span class="badge b-g"><i class="fas fa-check"></i> Confirmed at '+new Date().toLocaleTimeString()+'</span>';
+  toast('Allocation confirmed. Stock received.');
+  if(fbAllocations&&fbReady){
+    fbAllocations.child('alloc'+n).set({slot:n,confirmed:true,confirmedBy:who,confirmedAt:Date.now()});
+  }
+  fbLogAction('ALLOCATION_CONFIRMED','Allocation #'+n+' confirmed by '+who);
+}
+function markRecovered(cardId,actId){
+  const card=document.getElementById(cardId);
+  card.className='rcard done';
+  document.getElementById(actId).innerHTML='<span class="badge b-g"><i class="fas fa-check-double"></i> Marked as recovered and returned to CEO inventory</span>';
+  toast('Device recovered successfully.');
+  fbLogAction('RECOVERY_COMPLETE','Device marked recovered by '+(currentUser?currentUser.name:''));
+}
+function payComm(btn){
+  const row=btn.closest('tr');
+  row.querySelector('.badge').className='badge b-g';
+  row.querySelector('.badge').textContent='Paid';
+  btn.textContent='Receipt';btn.className='btn btn-ghost btn-sm';
+  toast('Commission payment processed.');
+}
+function doCreateUser(){
+  const name=document.getElementById('nuName').value.trim();
+  const phone=document.getElementById('nuPhone').value.trim();
+  const role=document.getElementById('nuRole').value;
+  if(!name||!phone){
+    toast('Please enter a name and phone number','var(--red)');
+    return;
+  }
+  if(currentUser.role==='admin'){
+    closeM('mCreateUser');
+    toast('Request sent to CEO Monalisa for approval');
+    fbLogAction('USER_REQUEST','Admin '+currentUser.name+' requested new login for '+name+' ('+role+')');
+    return;
+  }
+  closeM('mCreateUser');
+  toast('Login created for '+name+'. Credentials ready to share.');
+  fbLogAction('USER_CREATED','CEO created login for '+name+' as '+role);
+}
+function doAddDevice(){
+  const brandEl=document.querySelector('#mAddDevice select');
+  const modelEl=document.querySelectorAll('#mAddDevice .inp')[1];
+  const imeiInputs=document.querySelectorAll('#mAddDevice input.inp');
+  let imei='', model='', brand='', buy=0, sell=0, color='';
+  document.querySelectorAll('#mAddDevice .fg').forEach(fg=>{
+    const lbl=fg.querySelector('.lbl')?.textContent||'';
+    const input=fg.querySelector('input,select');
+    if(!input)return;
+    if(lbl.includes('Model'))model=input.value;
+    if(lbl.includes('Brand'))brand=input.value;
+    if(lbl.includes('Color'))color=input.value;
+    if(lbl.includes('IMEI'))imei=input.value;
+    if(lbl.includes('Purchase'))buy=parseInt(input.value)||0;
+    if(lbl.includes('Selling'))sell=parseInt(input.value)||0;
+  });
+  if(!imei||imei.length<5){
+    toast('Please enter a valid IMEI','var(--red)');
+    return;
+  }
+  if(devices.some(d=>d.imei===imei)){
+    toast('That IMEI already exists in inventory','var(--red)');
+    return;
+  }
+  const dest=document.getElementById('addDevDest').value;
+  const newDevice={brand:brand||'Samsung',model:model||'New device',ram:'-',storage:'-',color:color||'-',imei,buy:buy||0,sell:sell||0,holder:dest.includes('CEO')?'CEO Stock':dest,loc:'CEO Warehouse',age:0,status:dest.includes('CEO')?'ceo':'allocated'};
+  fbAddDevice(newDevice);
+  renderGrid(devices);renderTable(devices);
+  closeM('mAddDevice');
+  toast('Device added — '+dest);
+  fbLogAction('STOCK_ADDED',brand+' '+model+' ('+imei+') added by '+currentUser.name);
+}
+function doSale(){
+  const custName=document.getElementById('saleCustName').value.trim();
+  const custPhone=document.getElementById('saleCustPhone').value.trim();
+  const price=document.getElementById('salePrice').value.trim();
+  if(!custName||!custPhone){
+    toast('Please enter the customer name and phone','var(--red)');
+    return;
+  }
+  if(!price||isNaN(price)||parseInt(price)<=0){
+    toast('Please enter a valid selling price','var(--red)');
+    return;
+  }
+  closeM('mNewSale');
+  toast('Sale recorded for '+custName+'. Receipt generated.');
+  fbLogAction('SALE',custName+' bought a device for UGX '+parseInt(price).toLocaleString());
+  go('sales');
+}
+function doSendAlloc(){
+  const to=document.getElementById('allocTo').value;
+  const checked=document.querySelectorAll('#allocList input:checked').length;
+  if(checked===0){
+    toast('Select at least one IMEI to allocate','var(--red)');
+    return;
+  }
+  closeM('mAllocate');
+  toast(checked+' unit(s) sent to '+to+'. Waiting for confirmation.');
+  fbLogAction('ALLOCATION_SENT',currentUser.name+' allocated '+checked+' unit(s) to '+to);
+}
+
+function loadAllocIMEI(){
+  const b=document.getElementById('allocBrand').value;
+  const l=imeiByBrand[b]||[];
+  document.getElementById('allocList').innerHTML=l.map(i=>`<label style="display:flex;align-items:center;gap:7px;padding:4px 0;cursor:pointer;font-size:12px"><input type="checkbox"> <span style="font-family:monospace;font-size:11px">${i}</span></label>`).join('');
+}
+function loadSaleIMEI(){
+  const b=document.getElementById('saleBrand').value;
+  const l=imeiByBrand[b]||[];
+  const s=document.getElementById('saleIMEI');
+  s.innerHTML=l.map(i=>`<option>${i}</option>`).join('');
+}
+function loadReceiptInto(nr,cust,phone,nid,agent,brand,model,specs,color,imei,type,amount){
+  document.getElementById('r-nr').textContent='RECEIPT #'+nr;
+  document.getElementById('r-cust').textContent=cust;
+  document.getElementById('r-phone').textContent=phone;
+  document.getElementById('r-nid').textContent=nid;
+  document.getElementById('r-agent').textContent='Agent '+agent;
+  document.getElementById('r-brand').textContent=brand;
+  document.getElementById('r-model').textContent=model;
+  document.getElementById('r-specs').textContent=specs;
+  document.getElementById('r-color').textContent=color;
+  document.getElementById('r-imei').textContent=imei;
+  document.getElementById('r-type').textContent=type;
+  document.getElementById('r-total').textContent='UGX '+amount.toLocaleString();
+  toast('Receipt loaded');
+}
+function simulateImport(){toast('342 records imported and matched')}
+
+// ======================================================
+// DATE / GREETING
+// ======================================================
+function updateGreeting(){
+  const h=new Date().getHours();
+  const gr=h<12?'Good morning':h<17?'Good afternoon':'Good evening';
+  const el=document.getElementById('dashGreet');
+  if(el&&currentUser)el.textContent=gr+', '+currentUser.title.split(' ')[0]+' '+currentUser.name.split(' ')[0];
+  const de=document.getElementById('dashDate');
+  if(de)de.textContent=new Date().toLocaleDateString('en-UG',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+}
+
+// ======================================================
+// UGANDA MAP
+// ======================================================
+function initMap(){
+  const svg=document.getElementById('mapSvg');if(!svg)return;
+  const tt=document.getElementById('mapTT');
+  svg.querySelectorAll('path').forEach(p=>{
+    p.addEventListener('mouseenter',function(){tt.style.display='block';tt.innerHTML='<strong>'+this.dataset.name+'</strong><br>'+this.dataset.val+', '+this.dataset.units+' units'});
+    p.addEventListener('mousemove',function(e){
+      const r=svg.parentElement.getBoundingClientRect();
+      tt.style.left=(e.clientX-r.left+10)+'px';tt.style.top=(e.clientY-r.top-40)+'px';
+    });
+    p.addEventListener('mouseleave',()=>tt.style.display='none');
+    p.addEventListener('click',function(){
+      svg.querySelectorAll('path').forEach(x=>x.classList.remove('sel'));
+      this.classList.toggle('sel');
+      toast(this.dataset.name+': '+this.dataset.val+', '+this.dataset.units+' units');
+    });
+  });
+}
+
+// ======================================================
+// CHARTS
+// ======================================================
+const CH={};
+function mk(id,type,data,opts){
+  const el=document.getElementById(id);if(!el)return;
+  if(CH[id])CH[id].destroy();
+  CH[id]=new Chart(el,{type,data,options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},...opts}});
+}
+const grd={color:'rgba(255,255,255,.04)'};
+const tx={color:'rgba(255,255,255,.38)',font:{size:10.5}};
+
+function buildCharts(pg){
+  if(pg==='dashboard'){
+    mk('cSales','line',{
+      labels:['Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May','Jun'],
+      datasets:[{label:'UGX M',data:[198,224,241,268,287,312,228,261,289,304,291,312],borderColor:'#00c896',fill:true,backgroundColor:'rgba(0,200,150,.07)',tension:.4,pointRadius:3,borderWidth:2,pointBackgroundColor:'#00c896'}]
+    },{scales:{x:{grid:grd,ticks:tx},y:{grid:grd,ticks:tx}}});
+    mk('cBrand','doughnut',{
+      labels:['Tecno','Samsung','Infinix','Itel','Redmi','Others'],
+      datasets:[{data:[234,198,142,89,68,116],backgroundColor:['#00c896','#4c6ef5','#f5a623','#e84545','#8b5cf6','#475569'],borderWidth:0}]
+    },{cutout:'62%',plugins:{legend:{display:true,position:'bottom',labels:{color:'rgba(255,255,255,.5)',padding:6,font:{size:10},boxWidth:10}}}});
+    mk('cAge','bar',{
+      labels:['0 to 9 days','10 to 20 days','21+ days'],
+      datasets:[{data:[620,180,47],backgroundColor:['rgba(0,200,150,.65)','rgba(245,166,35,.65)','rgba(232,69,69,.65)'],borderRadius:6,borderWidth:0}]
+    },{indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{grid:grd,ticks:tx},y:{grid:{display:false},ticks:tx}}});
+  }else if(pg==='ceo'){
+    mk('cRegion','bar',{
+      labels:['Central','Eastern','Northern','Western','Greater KLA'],
+      datasets:[{data:[312,168,142,98,224],backgroundColor:'rgba(76,110,245,.65)',borderRadius:6,borderWidth:0}]
+    },{indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{grid:grd,ticks:tx},y:{grid:{display:false},ticks:tx}}});
+  }else if(pg==='performance'){
+    mk('cPerf','line',{
+      labels:['Jan','Feb','Mar','Apr','May','Jun'],
+      datasets:[
+        {label:'Kato Peter',data:[72,78,85,91,94,98],borderColor:'#00c896',tension:.4,fill:false,pointRadius:3,borderWidth:2},
+        {label:'Nakamya Judith',data:[58,62,68,71,74,76],borderColor:'#4c6ef5',tension:.4,fill:false,pointRadius:3,borderWidth:2},
+        {label:'Ssebuliba Mark',data:[44,49,52,58,61,63],borderColor:'#f5a623',tension:.4,fill:false,pointRadius:3,borderWidth:2},
+        {label:'Abaasa Robert',data:[32,35,37,39,40,41],borderColor:'#8b5cf6',tension:.4,fill:false,pointRadius:3,borderWidth:2},
+      ]
+    },{plugins:{legend:{display:true,position:'bottom',labels:{color:'rgba(255,255,255,.5)',font:{size:10},boxWidth:10,padding:8}}},scales:{x:{grid:grd,ticks:tx},y:{grid:grd,ticks:tx}}});
+  }else if(pg==='reports'){
+    mk('cReports','bar',{
+      labels:['Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May','Jun'],
+      datasets:[
+        {label:'Cash',data:[112,128,139,155,162,178,132,148,166,174,168,178],backgroundColor:'rgba(0,200,150,.65)',borderRadius:4,borderWidth:0},
+        {label:'Finance',data:[86,96,102,113,125,134,96,113,123,130,123,134],backgroundColor:'rgba(76,110,245,.65)',borderRadius:4,borderWidth:0},
+      ]
+    },{plugins:{legend:{display:true,position:'bottom',labels:{color:'rgba(255,255,255,.5)',font:{size:10},boxWidth:10,padding:8}}},scales:{x:{grid:{display:false},ticks:tx},y:{grid:grd,ticks:tx}}});
+  }else if(pg==='uganda'){
+    mk('cUganda','bar',{
+      labels:['Kampala','Wakiso','Gulu','Jinja','Mbale','Mbarara','Arua','Lira','Masaka','Tororo'],
+      datasets:[{data:[142,84,56,44,36,30,21,16,10,14],backgroundColor:['rgba(0,200,150,.75)','rgba(0,200,150,.6)','rgba(76,110,245,.65)','rgba(76,110,245,.5)','rgba(245,166,35,.6)','rgba(245,166,35,.5)','rgba(139,92,246,.55)','rgba(139,92,246,.45)','rgba(232,69,69,.5)','rgba(232,69,69,.4)'],borderRadius:6,borderWidth:0}]
+    },{plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:tx},y:{grid:grd,ticks:tx}}});
+    initMap();
+  }
+}
+
+// ======================================================
+// KEYBOARD
+// ======================================================
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){
+    document.querySelectorAll('.mwrap').forEach(m=>m.classList.remove('open'));
+    closeDetail();
+    document.getElementById('notifPanel').classList.remove('open');
+  }
+});
+
+// ======================================================
+// BOOT
+// ======================================================
+function bootApp(){
+  const app=document.getElementById('app');
+  app.classList.add('on');
+  app.style.display='flex';
+  applyPermissions();
+  renderGrid(devices);
+  renderTable(devices);
+  renderCustomers(customers);
+  renderUsers('');
+  loadAllocIMEI();
+  document.getElementById('nav-dashboard').classList.add('on');
+  document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
+  document.getElementById('pg-dashboard').classList.add('on');
+  document.getElementById('pageTitle').textContent='Dashboard';
+  buildCharts('dashboard');
+  startSessionTimer();
+  resetInactivity();
+  toast('Signed in as '+currentUser.name);
+  if(!fbApp)initFirebase();
+  fbLogAction('LOGIN','Signed in from '+(navigator.userAgent.includes('Mobile')?'mobile device':'desktop'));
+}
+
+window.addEventListener('load',()=>{
+  renderDemoUsers();
+  setTimeout(()=>{
+    document.getElementById('splash').classList.add('out');
+    setTimeout(()=>{
+      document.getElementById('splash').style.display='none';
+      document.getElementById('loginScreen').classList.add('on');
+    },500);
+  },1700);
+});
+</script>
+
+</body>
+</html>
