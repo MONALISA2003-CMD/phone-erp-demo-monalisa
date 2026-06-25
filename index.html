@@ -1,0 +1,1130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Monalisa Stock ERP</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="splash">
+  <div class="sp-mark">M</div>
+  <div class="sp-name">Monalisa Stock ERP</div>
+  <div class="sp-tag">Stock · Sales · Recovery · Uganda</div>
+  <div class="sp-track"><div class="sp-bar"></div></div>
+  <div class="sp-hint mt8">Checking your session...</div>
+</div>
+
+<!-- ============ LOGIN SCREEN ============ -->
+<div id="loginScreen">
+  <div class="login-wrap">
+    <div class="login-side">
+      <div class="login-brand">
+        <div class="login-brand-mark">M</div>
+        <h1>Run your phone<br>business properly.</h1>
+        <p>Monalisa Stock ERP tracks every handset from the day it lands in your warehouse to the day it's paid off, sold, or recovered from the field.</p>
+        <div class="login-feature"><i class="fas fa-fingerprint"></i><div><b>Every login is logged</b><span>Device, time and location recorded for every user, every session</span></div></div>
+        <div class="login-feature"><i class="fas fa-sitemap"></i><div><b>Stock only moves downward</b><span>Admins allocate to managers, managers to teams, teams to agents — never sideways without approval</span></div></div>
+        <div class="login-feature"><i class="fas fa-bell"></i><div><b>WhatsApp and email alerts</b><span>Aged stock and recovery cases reach Monalisa directly, in real time</span></div></div>
+      </div>
+    </div>
+    <div class="login-form-side">
+      <div class="login-box">
+        <h2 id="loginHeading">Sign in</h2>
+        <div class="sub" id="loginSub">Sign in with the email and password your CEO gave you.</div>
+        <div class="login-err" id="loginErr"><i class="fas fa-circle-exclamation"></i><span id="loginErrText">Incorrect email or password.</span></div>
+
+        <div class="login-field">
+          <label id="loginEmailLabel">Email address</label>
+          <div class="login-input-wrap">
+            <i class="fas fa-envelope lead"></i>
+            <input type="email" class="login-input" id="loginEmail" placeholder="you@monalisatech.com" autocomplete="off">
+          </div>
+        </div>
+        <div class="login-field">
+          <label>Password</label>
+          <div class="login-input-wrap">
+            <i class="fas fa-lock lead"></i>
+            <input type="password" class="login-input" id="loginPass" placeholder="Enter your password" autocomplete="off" onkeydown="if(event.key==='Enter')attemptLogin()">
+            <button class="pw-toggle" onclick="togglePw()"><i class="fas fa-eye" id="pwIcon"></i></button>
+          </div>
+        </div>
+        <button class="login-btn" id="loginBtn" onclick="attemptLogin()"><i class="fas fa-arrow-right-to-bracket"></i><span id="loginBtnText">Sign in</span></button>
+        <div class="xs muted mt12" style="text-align:center;cursor:pointer" id="forgotPwLink" onclick="sendPasswordReset()">Forgot your password?</div>
+
+        <div class="login-security-note"><i class="fas fa-shield-halved"></i><span id="securityNoteText">This is a closed system. New accounts can only be created by the Chief Executive Officer or an Administrator — there is no public sign-up.</span></div>
+        <div class="login-foot">Monalisa Tech Solutions &middot; Kampala, Uganda</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ FIRST-TIME SETUP SCREEN (only shown if no CEO account exists yet) ============ -->
+<!-- ============ SUPER ADMIN FIRST-RUN SETUP (only ever runs once, for Monalisa Tech Solutions itself) ============ -->
+<div id="setupScreen" style="position:fixed;inset:0;background:var(--bg);z-index:8500;display:none;align-items:center;justify-content:center;padding:20px;overflow-y:auto">
+  <div style="max-width:440px;width:100%;background:var(--surf);border:1px solid var(--border2);border-radius:16px;padding:32px;margin:20px 0">
+    <div style="width:48px;height:48px;background:rgba(245,166,35,.15);border:1px solid rgba(245,166,35,.3);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--amber);margin-bottom:16px"><i class="fas fa-flag-checkered"></i></div>
+    <h2 style="font-family:'Space Grotesk',sans-serif;font-size:20px;margin-bottom:6px">Welcome — set up Monalisa Tech Solutions</h2>
+    <p style="font-size:12.5px;color:var(--muted);margin-bottom:22px;line-height:1.6">This platform has never been set up. Whoever signs up here becomes the Super Administrator — the one account above every company using this system. This should only ever be done by Monalisa Tech Solutions itself. Do this yourself, on your own device, and don't share this screen.</p>
+    <div class="login-err" id="setupErr"><i class="fas fa-circle-exclamation"></i><span id="setupErrText"></span></div>
+    <div class="login-field">
+      <label>Your full name</label>
+      <div class="login-input-wrap"><i class="fas fa-user lead"></i><input type="text" class="login-input" id="setupName" placeholder="e.g. Monalisa Kabuusu"></div>
+    </div>
+    <div class="login-field">
+      <label>Email address</label>
+      <div class="login-input-wrap"><i class="fas fa-envelope lead"></i><input type="email" class="login-input" id="setupEmail" placeholder="you@monalisatech.com"></div>
+    </div>
+    <div class="login-field">
+      <label>Choose a password</label>
+      <div class="login-input-wrap"><i class="fas fa-lock lead"></i><input type="password" class="login-input" id="setupPass" placeholder="At least 6 characters"></div>
+    </div>
+    <button class="login-btn" onclick="completeFirstTimeSetup()"><i class="fas fa-crown"></i> Create Super Admin account</button>
+    <div class="xs muted mt12" style="text-align:center">Already set up on another device? <span style="color:var(--green);cursor:pointer" onclick="document.getElementById('setupScreen').style.display='none';document.getElementById('loginScreen').classList.add('on')">Go to sign in</span></div>
+  </div>
+</div>
+
+<!-- ============ NEW COMPANY REGISTRATION (any CEO signing up for the first time) ============ -->
+<div id="companyRegScreen" style="position:fixed;inset:0;background:var(--bg);z-index:8500;display:none;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto">
+  <div style="max-width:560px;width:100%;background:var(--surf);border:1px solid var(--border2);border-radius:16px;padding:32px;margin:20px 0">
+    <div style="width:48px;height:48px;background:rgba(0,200,150,.15);border:1px solid rgba(0,200,150,.3);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--green);margin-bottom:16px"><i class="fas fa-building"></i></div>
+    <h2 style="font-family:'Space Grotesk',sans-serif;font-size:20px;margin-bottom:6px">Register your company</h2>
+    <p style="font-size:12.5px;color:var(--muted);margin-bottom:20px;line-height:1.6">You're setting up a new company on Monalisa Stock ERP. Fill in your real business details below — this becomes your company's profile. Your login credentials for this account were given to you by Monalisa Tech Solutions; this form is where you fill in everything else.</p>
+    <div class="login-err" id="regErr"><i class="fas fa-circle-exclamation"></i><span id="regErrText"></span></div>
+
+    <div class="lbl" style="margin-top:4px">Business details</div>
+    <div class="g2 mt8">
+      <div class="fg"><label class="lbl">Business / company name</label><input class="inp" id="regBizName" placeholder="e.g. Kampala Phone Distributors Ltd"></div>
+      <div class="fg"><label class="lbl">Official business number</label><input class="inp" id="regBizNumber" placeholder="Company registration number"></div>
+      <div class="fg"><label class="lbl">Business email</label><input class="inp" type="email" id="regBizEmail" placeholder="info@yourcompany.com"></div>
+      <div class="fg"><label class="lbl">Business phone</label><input class="inp" id="regBizPhone" placeholder="+256 7XX XXX XXX"></div>
+    </div>
+    <div class="fg"><label class="lbl">Business address</label><input class="inp" id="regBizAddress" placeholder="Street, building, area"></div>
+
+    <div class="lbl" style="margin-top:14px">Location</div>
+    <div class="g2 mt8">
+      <div class="fg"><label class="lbl">Country</label><input class="inp" id="regCountry" value="Uganda"></div>
+      <div class="fg"><label class="lbl">Region</label><input class="inp" id="regRegion" placeholder="e.g. Central"></div>
+      <div class="fg"><label class="lbl">District</label><input class="inp" id="regDistrict" placeholder="e.g. Kampala"></div>
+      <div class="fg"><label class="lbl">Sub county</label><input class="inp" id="regSubCounty" placeholder=""></div>
+      <div class="fg"><label class="lbl">Parish</label><input class="inp" id="regParish" placeholder=""></div>
+      <div class="fg"><label class="lbl">Village</label><input class="inp" id="regVillage" placeholder=""></div>
+    </div>
+
+    <div class="lbl" style="margin-top:14px">About you, the CEO</div>
+    <div class="g2 mt8">
+      <div class="fg"><label class="lbl">Your full name</label><input class="inp" id="regCeoName" placeholder="Full name"></div>
+      <div class="fg"><label class="lbl">Your phone number</label><input class="inp" id="regCeoPhone" placeholder="+256 7XX XXX XXX"></div>
+    </div>
+
+    <button class="login-btn mt16" onclick="completeCompanyRegistration()"><i class="fas fa-circle-check"></i> Register my company</button>
+    <div class="xs muted mt12" style="text-align:center">This won't ask for payment yet — that comes right after.</div>
+  </div>
+</div>
+
+<!-- ============ SUBSCRIPTION REQUIRED / LOCKED SCREEN ============ -->
+<div id="subscriptionLockScreen" style="position:fixed;inset:0;background:var(--bg);z-index:8400;display:none;align-items:center;justify-content:center;padding:20px">
+  <div style="max-width:420px;width:100%;background:var(--surf);border:1px solid var(--border2);border-radius:16px;padding:32px;text-align:center">
+    <div style="width:54px;height:54px;background:rgba(245,166,35,.15);border:1px solid rgba(245,166,35,.3);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:22px;color:var(--amber)"><i class="fas fa-lock"></i></div>
+    <h2 style="font-family:'Space Grotesk',sans-serif;font-size:19px;margin-bottom:8px" id="subLockTitle">Subscription required</h2>
+    <p style="font-size:12.5px;color:var(--muted);margin-bottom:20px;line-height:1.6" id="subLockText">Your company's subscription with Monalisa Tech Solutions isn't active yet. You'll be able to add stock, staff, and sales as soon as payment is confirmed.</p>
+    <div class="card-sm mb16" style="text-align:left">
+      <div class="between mb8"><span class="xs muted">Company</span><span class="bold sm" id="subLockCompanyName">—</span></div>
+      <div class="between mb8"><span class="xs muted">Plan</span><span class="bold sm" id="subLockPlan">Standard — monthly</span></div>
+      <div class="between"><span class="xs muted">Status</span><span class="badge b-a" id="subLockStatus">Pending payment</span></div>
+    </div>
+    <button class="login-btn" onclick="simulatePayment()"><i class="fas fa-credit-card"></i> Simulate payment (demo)</button>
+    <div class="xs muted mt12">For real billing setup, contact Monalisa Tech Solutions: <span style="color:var(--green)">+256703953711</span> or <span style="color:var(--green)">kabuusumonalisa@gmail.com</span></div>
+    <div class="xs muted mt16" style="cursor:pointer;text-decoration:underline" onclick="doLogout()">Sign out</div>
+  </div>
+</div>
+
+<!-- ============ SESSION LOCK SCREEN ============ -->
+<div id="lockScreen">
+  <div class="lock-box">
+    <div class="lock-icon"><i class="fas fa-clock"></i></div>
+    <h3>Session timed out</h3>
+    <p>For security, we signed you out after a period of inactivity. Please enter your password to continue, or sign in again.</p>
+    <input type="password" class="login-input" id="unlockPass" placeholder="Enter your password" style="margin-bottom:12px;padding-left:14px">
+    <button class="login-btn" onclick="unlockSession()"><i class="fas fa-unlock"></i> Unlock session</button>
+    <div class="xs muted mt12" style="cursor:pointer" onclick="forceLogout()">Sign in as a different user</div>
+  </div>
+</div>
+<div class="notif-p" id="notifPanel">
+  <div style="padding:14px 15px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+    <span style="font-weight:700;font-size:13px">What's happening</span>
+    <span class="xs green" style="cursor:pointer;font-weight:600" onclick="clearNotifs()">Clear all</span>
+  </div>
+  <div class="ni unread"><div class="ni-title">⚠️ Aged stock alert</div><div class="ni-desc">Samsung A55 5G with Agent Nalwoga — 32 days and counting</div><div class="ni-time">4 minutes ago</div></div>
+  <div class="ni unread"><div class="ni-title">💰 Financed sale confirmed</div><div class="ni-desc">Tecno Spark 20 Pro sold via Watu Credit to Mukasa David, Kampala</div><div class="ni-time">18 minutes ago</div></div>
+  <div class="ni unread"><div class="ni-title">📦 Allocation sent</div><div class="ni-desc">15 units from CEO stock to Manager Kato Peter. Awaiting confirmation.</div><div class="ni-time">1 hour ago</div></div>
+  <div class="ni"><div class="ni-title">🔐 New admin created</div><div class="ni-desc">CEO Monalisa added Namugga Sarah as Administrator</div><div class="ni-time">2 hours ago</div></div>
+  <div class="ni"><div class="ni-title">✅ Recovery complete</div><div class="ni-desc">Infinix Hot 40i recovered from Agent Ssempijja and returned to CEO inventory</div><div class="ni-time">3 hours ago</div></div>
+  <div class="ni"><div class="ni-title">🏆 Commission milestone</div><div class="ni-desc">Agent Apio Grace crossed UGX 500,000 in June commissions</div><div class="ni-time">Yesterday</div></div>
+</div>
+
+<div class="d-overlay" id="dOverlay" onclick="closeDetail()"></div>
+<div class="d-panel" id="dPanel">
+  <div class="dp-hd"><h3 id="dp-title">Device Detail</h3><div class="dp-x" onclick="closeDetail()"><i class="fas fa-times"></i></div></div>
+  <div class="dp-body" id="dp-body"></div>
+</div>
+
+<div class="sb-overlay" id="sbOverlay" onclick="closeSb()"></div>
+
+<div id="app">
+  <aside class="sb" id="sb">
+    <div class="sb-logo">
+      <div class="sb-mark">M</div>
+      <div class="sb-brand">Monalisa Stock ERP <small>Smart Inventory Tracking</small></div>
+    </div>
+
+    <div class="sb-sec">Main</div>
+    <div class="nav on" id="nav-dashboard" onclick="go('dashboard')"><i class="fas fa-th-large"></i>Dashboard</div>
+    <div class="nav" id="nav-ceo" onclick="go('ceo')"><i class="fas fa-crown"></i>CEO Command Center</div>
+
+    <div class="sb-sec">Inventory</div>
+    <div class="nav" id="nav-inventory" onclick="go('inventory')"><i class="fas fa-mobile-alt"></i>Inventory <span class="pip g">847</span></div>
+    <div class="nav" id="nav-warehouses" onclick="go('warehouses')"><i class="fas fa-warehouse"></i>Warehouses</div>
+    <div class="nav" id="nav-allocation" onclick="go('allocation')"><i class="fas fa-exchange-alt"></i>Stock Allocation <span class="pip a">5</span></div>
+
+    <div class="sb-sec">Sales</div>
+    <div class="nav" id="nav-sales" onclick="go('sales')"><i class="fas fa-receipt"></i>Sales</div>
+    <div class="nav" id="nav-customers" onclick="go('customers')"><i class="fas fa-users"></i>Customers</div>
+    <div class="nav" id="nav-financing" onclick="go('financing')"><i class="fas fa-handshake"></i>Financing Integration</div>
+
+    <div class="sb-sec">Field Ops</div>
+    <div class="nav" id="nav-recovery" onclick="go('recovery')"><i class="fas fa-shield-alt"></i>Recovery <span class="pip">12</span></div>
+    <div class="nav" id="nav-commissions" onclick="go('commissions')"><i class="fas fa-coins"></i>Commissions</div>
+    <div class="nav" id="nav-performance" onclick="go('performance')"><i class="fas fa-chart-line"></i>Performance</div>
+
+    <div class="sb-sec">Intelligence</div>
+    <div class="nav" id="nav-reports" onclick="go('reports')"><i class="fas fa-file-alt"></i>Reports</div>
+    <div class="nav" id="nav-uganda" onclick="go('uganda')"><i class="fas fa-map-marked-alt"></i>Uganda Analytics</div>
+
+    <div class="sb-sec">Admin</div>
+    <div class="nav" id="nav-users" onclick="go('users')"><i class="fas fa-user-shield"></i>Users</div>
+    <div class="nav" id="nav-auditlogs" onclick="go('auditlogs')"><i class="fas fa-history"></i>Audit Logs</div>
+    <div class="nav" id="nav-security" onclick="go('security')"><i class="fas fa-shield-halved"></i>Security Center</div>
+    <div class="nav" id="nav-integrations" onclick="go('integrations')"><i class="fas fa-plug"></i>Integrations</div>
+    <div class="nav" id="nav-settings" onclick="go('settings')"><i class="fas fa-cog"></i>Settings</div>
+
+    <div class="sb-foot">
+      <div class="logout-menu" id="logoutMenu">
+        <div class="logout-item" onclick="go('settings');closeLogoutMenu()"><i class="fas fa-user"></i>My profile</div>
+        <div class="logout-item" onclick="go('security');closeLogoutMenu()"><i class="fas fa-shield-halved"></i>Security</div>
+        <div class="logout-item danger" onclick="doLogout()"><i class="fas fa-arrow-right-from-bracket"></i>Sign out</div>
+      </div>
+      <div class="sb-user" id="sbUser" onclick="toggleLogoutMenu()">
+        <div class="ava ava-g" id="sbAva">CM</div>
+        <div style="flex:1;min-width:0">
+          <div class="u-name" id="sbName">Monalisa C.</div>
+          <div class="u-role" id="sbRole">Chief Executive Officer</div>
+        </div>
+        <i class="fas fa-ellipsis-v muted xs"></i>
+      </div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="top">
+      <button class="top-menu" onclick="toggleSb()" aria-label="Open menu"><i class="fas fa-bars"></i></button>
+      <div class="top-title" id="pageTitle">Dashboard</div>
+      <div style="position:relative;flex:1;max-width:300px">
+        <div class="sbar">
+          <i class="fas fa-search muted" style="font-size:12px"></i>
+          <input id="sInput" placeholder="Search IMEI, customer, receipt..." aria-label="Search inventory, customers, and receipts" oninput="doSearch(this.value)" onfocus="if(this.value)showSP()" onblur="setTimeout(hideSP,200)">
+        </div>
+        <div class="sp" id="searchPanel"></div>
+      </div>
+      <div class="session-pill" id="syncPill" style="background:rgba(76,110,245,.08);border-color:rgba(76,110,245,.18);color:var(--blue)"><i class="fas fa-cloud-arrow-up" id="syncIcon" style="font-size:10px"></i><span id="syncStatus">Connecting...</span></div>
+      <div class="session-pill" id="sessionPill"><i class="fas fa-circle" style="font-size:6px"></i><span id="sessionTimer">Session active</span></div>
+      <div class="top-acts">
+        <div class="ico" onclick="toggleNotif()" role="button" tabindex="0" aria-label="Notifications" onkeydown="if(event.key==='Enter')toggleNotif()"><i class="fas fa-bell"></i><span class="dot"></span></div>
+        <div class="ico" onclick="toggleFS()" role="button" tabindex="0" aria-label="Toggle full screen" onkeydown="if(event.key==='Enter')toggleFS()"><i class="fas fa-expand"></i></div>
+        <div class="ico" id="roleIco" title="Current role" role="img" aria-label="Current role indicator"><i class="fas fa-crown" style="color:var(--amber)"></i></div>
+      </div>
+    </div>
+    <div class="pg on" id="pg-dashboard">
+      <div id="dashboardContent">
+        <div class="xs muted" style="text-align:center;padding:40px 0">Loading your dashboard...</div>
+      </div>
+    </div>
+    <div class="pg" id="pg-ceo">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:20px">
+        <div style="width:48px;height:48px;background:linear-gradient(135deg,rgba(245,166,35,.2),rgba(245,166,35,.05));border:1px solid rgba(245,166,35,.3);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px">👑</div>
+        <div><div style="font-family:'Space Grotesk',sans-serif;font-size:20px;font-weight:700">Command Center</div><div class="xs muted mt4">Full system authority. Only the CEO can create or remove logins.</div></div>
+      </div>
+      <div class="g2 mb16">
+        <div>
+          <div class="card mb12">
+            <div class="hd2">Quick actions</div>
+            <div class="cmd-grid">
+              <div class="cmd" onclick="openM('mCreateUser')"><i class="fas fa-user-plus green"></i><span>Create login</span></div>
+              <div class="cmd" onclick="go('allocation')"><i class="fas fa-exchange-alt blue"></i><span>Override allocation</span></div>
+              <div class="cmd" onclick="go('users')"><i class="fas fa-user-slash red"></i><span>Suspend a user</span></div>
+              <div class="cmd" onclick="go('security')"><i class="fas fa-key amber"></i><span>Reset a password</span></div>
+              <div class="cmd" onclick="go('inventory')"><i class="fas fa-mobile-alt green"></i><span>Stock ownership</span></div>
+              <div class="cmd" onclick="go('reports')"><i class="fas fa-file-export" style="color:var(--violet)"></i><span>Exec reports</span></div>
+              <div class="cmd" onclick="go('auditlogs')"><i class="fas fa-history" style="color:#06b6d4"></i><span>Activity logs</span></div>
+              <div class="cmd" onclick="go('integrations')"><i class="fab fa-whatsapp" style="color:#25d366"></i><span>WhatsApp / Email</span></div>
+            </div>
+          </div>
+          <div class="card mb12">
+            <div class="between mb12"><div class="hd2" style="margin:0">Administrators</div><button class="btn btn-g btn-sm" onclick="openM('mCreateUser');presetRole('admin')"><i class="fas fa-plus"></i>Add admin</button></div>
+            <div class="xs muted mb12">Admins can allocate stock to managers, team leaders and shop owners, and can manage day-to-day operations — but only the CEO can create or delete logins.</div>
+            <div class="gap" id="ceoAdminsList">
+              <div class="xs muted">No administrators yet. Use "Add admin" to create one.</div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="hd2">Live activity today</div>
+            <div class="tl">
+              <div class="tl-item"><div class="tl-dot" style="background:var(--violet)"></div><div class="tl-when">08:15 AM</div><div class="tl-what">Admin Namugga Sarah logged in</div><div class="tl-who">Kampala HQ, Chrome on Windows</div></div>
+              <div class="tl-item"><div class="tl-dot" style="background:var(--green)"></div><div class="tl-when">08:31 AM</div><div class="tl-what">Manager Kato Peter logged in</div><div class="tl-who">Kampala, Chrome on Android</div></div>
+              <div class="tl-item"><div class="tl-dot" style="background:var(--blue)"></div><div class="tl-when">08:45 AM</div><div class="tl-what">8 units allocated to TL Ssali Moses</div><div class="tl-who">By Manager Kato Peter</div></div>
+              <div class="tl-item"><div class="tl-dot" style="background:var(--amber)"></div><div class="tl-when">09:02 AM</div><div class="tl-what">Sale recorded — Tecno Spark 20</div><div class="tl-who">Agent Apio Grace, Gulu, UGX 485,000</div></div>
+              <div class="tl-item"><div class="tl-dot" style="background:var(--red)"></div><div class="tl-when">09:18 AM</div><div class="tl-what">Recovery alert fired automatically</div><div class="tl-who">Samsung A15 — 24 days with Agent Ssempijja</div></div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="g2 mb12">
+            <div class="card-sm"><div class="xs muted mb4">Total users</div><div class="stat-val lg" id="ceoStatTotalUsers">—</div><div class="xs green mt4" id="ceoStatUsersNote">Live from database</div></div>
+            <div class="card-sm"><div class="xs muted mb4">CEO inventory</div><div class="stat-val lg">283</div><div class="xs muted mt4">Units in master stock</div></div>
+          </div>
+          <div class="card mb12">
+            <div class="hd2">Revenue by region</div>
+            <div class="ch h220"><canvas id="cRegion"></canvas></div>
+          </div>
+          <div class="card">
+            <div class="hd2">Inventory by manager</div>
+            <div class="tw">
+              <table>
+                <thead><tr><th>Manager</th><th>Units</th><th>Value (UGX)</th><th>Status</th></tr></thead>
+                <tbody>
+                  <tr><td class="bold">Kato Peter</td><td>124</td><td class="bold green">124,350,000</td><td><span class="badge b-g">Active</span></td></tr>
+                  <tr><td class="bold">Nakamya Judith</td><td>98</td><td class="bold green">89,250,000</td><td><span class="badge b-g">Active</span></td></tr>
+                  <tr><td class="bold">Ssebuliba Mark</td><td>76</td><td class="bold">71,800,000</td><td><span class="badge b-g">Active</span></td></tr>
+                  <tr><td class="bold">Abaasa Robert</td><td>52</td><td class="bold">48,400,000</td><td><span class="badge b-a">Review</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="pg" id="pg-inventory">
+      <div class="hd">
+        <h2>Inventory</h2>
+        <div class="row">
+          <select class="inp btn-sm" style="width:auto" id="invBrand" onchange="filterInv()"><option value="">All brands</option><option>Samsung</option><option>Tecno</option><option>Infinix</option><option>Itel</option><option>Redmi</option><option>Nokia</option><option>Oppo</option><option>Vivo</option></select>
+          <select class="inp btn-sm" style="width:auto" id="invAge" onchange="filterInv()"><option value="">All ages</option><option value="g">Under 10 days</option><option value="a">10 to 20 days</option><option value="r">21+ days</option></select>
+          <button class="btn btn-ghost btn-sm"><i class="fas fa-file-excel"></i>Export</button>
+          <button class="btn btn-danger btn-sm" id="reportIssueBtn" onclick="openM('mReportIssue')"><i class="fas fa-triangle-exclamation"></i>Report an issue</button>
+          <button class="btn btn-g btn-sm" id="addStockBtn" onclick="openM('mAddDevice')"><i class="fas fa-plus"></i>Add devices</button>
+        </div>
+      </div>
+
+      <div class="perm-banner" id="invPermBanner" style="display:none">
+        <i class="fas fa-circle-info"></i><span id="invPermText"></span>
+      </div>
+
+      <div class="tabs" id="invTabs">
+        <button class="tab on" onclick="setTab(this,'invTabs');filterStatus('')">All stock (847)</button>
+        <button class="tab" onclick="setTab(this,'invTabs');filterStatus('ceo')">CEO stock (283)</button>
+        <button class="tab" onclick="setTab(this,'invTabs');filterStatus('allocated')">Allocated (564)</button>
+        <button class="tab" onclick="setTab(this,'invTabs');filterStatus('aged')">Aged 21+ (47)</button>
+      </div>
+      <div class="g4" id="deviceGrid" style="gap:12px;margin-bottom:20px"></div>
+      <div class="card">
+        <div class="between mb12"><div class="hd2" style="margin:0">Full IMEI register</div><span class="xs muted">Click any row to view history</span></div>
+        <div class="tw"><table><thead><tr><th>IMEI</th><th>Brand / Model</th><th>Specs</th><th>Buy price</th><th>Sell price</th><th>Holder</th><th>Age</th><th>Status</th></tr></thead><tbody id="invTbody"></tbody></table></div>
+      </div>
+    </div>
+    <div class="pg" id="pg-allocation">
+      <div class="hd"><h2>Stock Allocation</h2><button class="btn btn-g" id="newAllocBtn" onclick="openM('mAllocate')"><i class="fas fa-exchange-alt"></i>New allocation</button></div>
+
+      <div class="perm-banner" id="allocPermBanner" style="display:none"><i class="fas fa-circle-info"></i><span id="allocPermText"></span></div>
+
+      <div class="card mb16">
+        <div class="xs muted mb12">Who can allocate to whom</div>
+        <div class="g3">
+          <div class="card-sm" style="border-top:2px solid var(--amber)">
+            <div class="bold sm mb4"><i class="fas fa-crown amber"></i> CEO &amp; Administrators</div>
+            <div class="xs muted">Can allocate stock to Managers, Team Leaders, or Shop Owners directly from CEO master stock</div>
+          </div>
+          <div class="card-sm" style="border-top:2px solid var(--blue)">
+            <div class="bold sm mb4"><i class="fas fa-briefcase blue"></i> Managers &amp; Team Leaders</div>
+            <div class="xs muted">Can only allocate stock they've already received, and only down to Agents under them</div>
+          </div>
+          <div class="card-sm" style="border-top:2px solid var(--green)">
+            <div class="bold sm mb4"><i class="fas fa-user green"></i> Agents &amp; Shop Owners</div>
+            <div class="xs muted">Receive stock only. They sell it or return it — they cannot allocate onward to anyone</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb16">
+        <div class="xs muted mb12">How a stock allocation works end to end</div>
+        <div class="wf">
+          <div class="wf-step"><div class="wf-num done">1</div><div class="wf-lbl done">CEO/Admin selects units</div></div>
+          <div class="wf-line done"></div>
+          <div class="wf-step"><div class="wf-num done">2</div><div class="wf-lbl done">Allocates to Manager/TL/Shop</div></div>
+          <div class="wf-line done"></div>
+          <div class="wf-step"><div class="wf-num active">3</div><div class="wf-lbl active">Receiver confirms</div></div>
+          <div class="wf-line"></div>
+          <div class="wf-step"><div class="wf-num">4</div><div class="wf-lbl">Manager/TL sends to Agent</div></div>
+          <div class="wf-line"></div>
+          <div class="wf-step"><div class="wf-num">5</div><div class="wf-lbl">Agent confirms receipt</div></div>
+          <div class="wf-line"></div>
+          <div class="wf-step"><div class="wf-num">6</div><div class="wf-lbl">Agent sells or returns</div></div>
+        </div>
+      </div>
+
+      <div class="g2 mb16">
+        <div class="gap" id="pendingAllocList">
+          <div class="xs muted">Loading your pending allocations...</div>
+        </div>
+        <div class="card">
+          <div class="hd2">Recent movements</div>
+          <div class="tl" id="recentMovementsList">
+            <div class="xs muted">Loading recent movements...</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="between mb12"><div class="hd2" style="margin:0">IMEI trail — Samsung Galaxy A55 5G</div><span class="badge b-r">32 days in field</span></div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>Move</th><th>From</th><th>To</th><th>Date</th><th>Reason</th><th>Confirmed</th><th>Days held</th></tr></thead>
+            <tbody>
+              <tr><td class="bold">#001</td><td>Supplier</td><td>CEO Stock</td><td>15 May 2025</td><td>Stock intake</td><td><span class="badge b-g">System</span></td><td>—</td></tr>
+              <tr><td class="bold">#002</td><td>CEO Stock</td><td>Manager Kato</td><td>20 May 2025</td><td>Allocation</td><td><span class="badge b-g">Confirmed</span></td><td>5</td></tr>
+              <tr><td class="bold">#003</td><td>Manager Kato</td><td>TL Ssali Moses</td><td>22 May 2025</td><td>Team allocation</td><td><span class="badge b-g">Confirmed</span></td><td>2</td></tr>
+              <tr><td class="bold">#004</td><td>TL Ssali</td><td>Agent Nalwoga F.</td><td>25 May 2025</td><td>Field assignment</td><td><span class="badge b-g">Confirmed</span></td><td>3</td></tr>
+              <tr style="background:rgba(232,69,69,.04)"><td class="bold red">#005</td><td colspan="2" class="red bold">Still with Agent Nalwoga — 32 days</td><td>25 May 2025</td><td>Pending sale</td><td><span class="badge b-r">Aged</span></td><td><span class="bold red">32</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="pg" id="pg-sales">
+      <div class="hd"><h2>Sales</h2>
+        <div class="row">
+          <button class="btn btn-ghost btn-sm"><i class="fas fa-file-pdf"></i>Export PDF</button>
+          <button class="btn btn-g" onclick="openM('mNewSale')"><i class="fas fa-plus"></i>Record a sale</button>
+        </div>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="stat-ic ic-g"><i class="fas fa-sun"></i></div><div class="stat-lbl">Today</div><div class="stat-val" style="font-size:21px">UGX 4.2M</div><div class="stat-sub green">7 transactions</div></div>
+        <div class="stat"><div class="stat-ic ic-b"><i class="fas fa-calendar-week"></i></div><div class="stat-lbl">This week</div><div class="stat-val" style="font-size:21px">UGX 22.8M</div><div class="stat-sub blue">+12% vs last week</div></div>
+        <div class="stat" style="flex:1.5"><div class="stat-ic ic-a"><i class="fas fa-calendar-alt"></i></div><div class="stat-lbl">June total</div><div class="stat-val" style="font-size:26px">UGX 312M</div><div class="stat-sub amber">348 units sold</div><div class="bar mt8"><div class="bar-fill" style="width:78%;background:linear-gradient(90deg,var(--amber),var(--green))"></div></div></div>
+      </div>
+      <div class="g2 mb16">
+        <div class="card">
+          <div class="hd2">Recent transactions</div>
+          <div class="tw">
+            <table>
+              <thead><tr><th>Receipt</th><th>Customer</th><th>Device</th><th>Type</th><th>Agent</th><th>Amount</th></tr></thead>
+              <tbody>
+                <tr style="cursor:pointer" onclick="loadReceiptInto('RCP-20250618-0047','Mukasa David','+256 772 345 678','CM98765432BC','Apio Grace','Tecno','Spark 20 Pro','8GB / 128GB','Magic Skin White','352001234567890','Financed — Watu Credit',485000)"><td class="bold green xs">#RCP-20250618-0047</td><td>Mukasa David</td><td>Tecno Spark 20 Pro</td><td><span class="badge b-b">Finance</span></td><td>Apio Grace</td><td class="bold">485,000</td></tr>
+                <tr style="cursor:pointer" onclick="loadReceiptInto('RCP-20250618-0046','Namulondo Joyce','+256 701 234 567','NJ72345678AB','Mukasa Ronald','Samsung','Galaxy A15','4GB / 128GB','Light Blue','358001234567890','Cash',620000)"><td class="bold green xs">#RCP-20250618-0046</td><td>Namulondo Joyce</td><td>Samsung A15</td><td><span class="badge b-g">Cash</span></td><td>Mukasa Ronald</td><td class="bold">620,000</td></tr>
+                <tr style="cursor:pointer" onclick="loadReceiptInto('RCP-20250618-0045','Ssekandi Fred','+256 782 901 234','SF61238976CD','Nakato Sarah','Infinix','Hot 40i','4GB / 128GB','Horizon Blue','359112233445566','Cash',395000)"><td class="bold green xs">#RCP-20250618-0045</td><td>Ssekandi Fred</td><td>Infinix Hot 40i</td><td><span class="badge b-g">Cash</span></td><td>Nakato Sarah</td><td class="bold">395,000</td></tr>
+                <tr style="cursor:pointer" onclick="loadReceiptInto('RCP-20250618-0044','Kiggundu Bashir','+256 756 123 890','KB55123456EF','Otim Charles','Nokia','G60 5G','6GB / 128GB','Black','351234567890123','Financed — Mogo',720000)"><td class="bold green xs">#RCP-20250618-0044</td><td>Kiggundu Bashir</td><td>Nokia G60 5G</td><td><span class="badge b-b">Finance</span></td><td>Otim Charles</td><td class="bold">720,000</td></tr>
+                <tr style="cursor:pointer" onclick="loadReceiptInto('RCP-20250617-0043','Nalwanga Rose','+256 714 567 890','NR44987654GH','Namukasa Lydia','Itel','A70 Pro','4GB / 64GB','Purple','356789012345678','Cash',320000)"><td class="bold green xs">#RCP-20250617-0043</td><td>Nalwanga Rose</td><td>Itel A70 Pro</td><td><span class="badge b-g">Cash</span></td><td>Namukasa L.</td><td class="bold">320,000</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div>
+          <div class="between mb8"><div class="xs muted" style="text-transform:uppercase;letter-spacing:1px;font-weight:700">Receipt preview</div><span class="xs muted">Click a row to load it</span></div>
+          <div class="receipt" id="receiptCard">
+            <div class="rh-name">MONALISA TECH SOLUTIONS</div>
+            <div class="rh-addr">Kampala, Uganda, East Africa<br>+256703953711 | kabuusumonalisa@gmail.com</div>
+            <div class="rh-nr" id="r-nr">RECEIPT #RCP-20250618-0047</div>
+            <hr class="r-sep">
+            <div class="r-row"><span>Date</span><strong>18 June 2025</strong></div>
+            <div class="r-row"><span>Time</span><strong>08:32 AM EAT</strong></div>
+            <div class="r-row"><span>Customer</span><strong id="r-cust">Mukasa David</strong></div>
+            <div class="r-row"><span>Phone</span><strong id="r-phone">+256 772 345 678</strong></div>
+            <div class="r-row"><span>National ID</span><strong id="r-nid">CM98765432BC</strong></div>
+            <div class="r-row"><span>Salesperson</span><strong id="r-agent">Agent Apio Grace</strong></div>
+            <hr class="r-sep">
+            <div class="r-row"><span>Brand</span><strong id="r-brand">Tecno</strong></div>
+            <div class="r-row"><span>Model</span><strong id="r-model">Spark 20 Pro</strong></div>
+            <div class="r-row"><span>Specs</span><strong id="r-specs">8GB / 128GB</strong></div>
+            <div class="r-row"><span>Color</span><strong id="r-color">Magic Skin White</strong></div>
+            <div class="r-row"><span>IMEI</span><strong id="r-imei" style="font-family:monospace;font-size:10.5px">352001234567890</strong></div>
+            <div class="r-row"><span>Sale type</span><strong id="r-type" style="color:#009e78">Financed — Watu Credit</strong></div>
+            <div class="r-total"><span>TOTAL</span><span id="r-total" style="color:#009e78">UGX 485,000</span></div>
+            <div class="stamp">
+              <div class="stamp-ring">MONALISA<br>TECH<br>SOLUTIONS</div>
+              <div style="font-size:10px;color:#888">Thank you for choosing us.</div>
+            </div>
+          </div>
+          <div class="row mt12">
+            <button class="btn btn-g btn-sm" onclick="downloadReceiptPDF()"><i class="fas fa-file-pdf"></i>Download PDF</button>
+            <button class="btn btn-wa btn-sm" onclick="sendReceiptWA()"><i class="fab fa-whatsapp"></i>Send via WhatsApp</button>
+            <button class="btn btn-mail btn-sm" onclick="sendReceiptEmail()"><i class="fas fa-envelope"></i>Email receipt</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="pg" id="pg-customers">
+      <div class="hd"><h2>Customers</h2><button class="btn btn-g btn-sm" onclick="openM('mAddCustomer')"><i class="fas fa-plus"></i>Add customer</button></div>
+      <div class="card mb14">
+        <div class="row" style="flex-wrap:wrap;gap:10px">
+          <div style="flex:2;min-width:180px"><input class="inp" id="custSearch" placeholder="Name, phone, or National ID..." oninput="filterCustomers()"></div>
+          <div style="flex:1;min-width:130px"><select class="inp" id="custDistrict" onchange="filterCustomers()"><option value="">All districts</option><option>Kampala</option><option>Wakiso</option><option>Gulu</option><option>Jinja</option><option>Mbale</option><option>Mbarara</option></select></div>
+          <button class="btn btn-g btn-sm" onclick="filterCustomers()">Search</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="tw">
+          <table>
+            <thead><tr><th>Name</th><th>Phone</th><th>National ID</th><th>District</th><th>Village</th><th>Agent</th><th>Purchases</th><th>Last purchase</th><th>Contact</th></tr></thead>
+            <tbody id="custTbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="pg" id="pg-financing">
+      <div class="hd"><h2>Financing Integration</h2><button class="btn btn-g btn-sm" id="addFinancePartnerBtn" onclick="openM('mAddFinancePartner')"><i class="fas fa-plus"></i>Add financing partner</button></div>
+      <div class="g2 mb16">
+        <div>
+          <div class="xs muted mb8" style="text-transform:uppercase;letter-spacing:1px;font-weight:700">Your financing partners</div>
+          <div id="financePartnersList"><div class="xs muted">No financing partners added yet.</div></div>
+        </div>
+        <div class="card">
+          <div class="hd2">Record a financed sale</div>
+          <div class="xs muted mb12">This links a real device, customer, and partner together, so financing isn't disconnected from your stock and sales.</div>
+          <button class="btn btn-g btn-sm" onclick="openM('mAddFinancedSale')"><i class="fas fa-file-invoice-dollar"></i>Record financed sale</button>
+          <div class="divider"></div>
+          <div class="bold xs mb8">What this tracks per record</div>
+          <div style="display:flex;flex-wrap:wrap;gap:5px">
+            <span class="chip">Down payment</span>
+            <span class="chip">Installment plan</span>
+            <span class="chip">Outstanding balance</span>
+            <span class="chip">Default status</span>
+            <span class="chip">Linked IMEI</span>
+            <span class="chip">Linked customer</span>
+          </div>
+        </div>
+      </div>
+      <div class="stats" id="financeStatsRow">
+        <div class="stat"><div class="stat-lbl">Active financed sales</div><div class="stat-val" id="finActiveCount" style="font-size:24px">—</div></div>
+        <div class="stat"><div class="stat-lbl">Outstanding balance</div><div class="stat-val amber" id="finOutstanding" style="font-size:22px">—</div></div>
+        <div class="stat"><div class="stat-lbl">In default</div><div class="stat-val red" id="finDefaulted" style="font-size:24px">—</div></div>
+      </div>
+      <div class="card">
+        <div class="between mb12"><div class="hd2" style="margin:0">Financing records</div></div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>Customer</th><th>Phone</th><th>IMEI</th><th>Partner</th><th>Device</th><th>Down payment</th><th>Balance (UGX)</th><th>Status</th></tr></thead>
+            <tbody id="financingTbody"><tr><td colspan="8" class="xs muted" style="text-align:center;padding:20px">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="pg" id="pg-recovery">
+      <div class="hd"><h2>Recovery Management</h2><span class="badge b-g"><span class="dot-live" style="width:5px;height:5px;margin-right:4px"></span>Live</span></div>
+
+      <div class="perm-banner" id="recoveryScopeBanner" style="margin-bottom:16px"><i class="fas fa-shield-halved"></i><span>This page only ever shows aged stock and reported issues — never active, healthy inventory.</span></div>
+
+      <div class="stats" id="recoveryStatsRow">
+        <div class="stat"><div class="stat-lbl">Aged stock right now</div><div class="stat-val red" id="recoActiveCount" style="font-size:28px">—</div></div>
+        <div class="stat"><div class="stat-lbl">Recovered today</div><div class="stat-val green" id="recoToday" style="font-size:26px">—</div></div>
+        <div class="stat"><div class="stat-lbl">Recovered yesterday</div><div class="stat-val" id="recoYesterday" style="font-size:26px">—</div></div>
+        <div class="stat"><div class="stat-lbl">This week</div><div class="stat-val" id="recoWeek" style="font-size:26px">—</div></div>
+        <div class="stat"><div class="stat-lbl">This month</div><div class="stat-val" id="recoMonth" style="font-size:26px">—</div></div>
+      </div>
+
+      <div class="tabs" id="recoveryTabs">
+        <button class="tab on" onclick="setTab(this,'recoveryTabs');renderRecoveryQueue('aged')">Aged stock</button>
+        <button class="tab" onclick="setTab(this,'recoveryTabs');renderRecoveryQueue('issues')">Reported issues</button>
+        <button class="tab" onclick="setTab(this,'recoveryTabs');renderRecoveryQueue('done')">Recovered</button>
+      </div>
+
+      <div class="gap" id="recoveryQueueList">
+        <div class="xs muted">Loading...</div>
+      </div>
+    </div>
+
+    <div class="pg" id="pg-commissions">
+      <div class="hd"><h2>Commissions</h2><span class="badge b-g"><span class="dot-live" style="width:5px;height:5px;margin-right:4px"></span>Live</span></div>
+      <div class="stats" id="commissionStatsRow">
+        <div class="stat"><div class="stat-lbl">Total earned</div><div class="stat-val green" id="commTotalEarned" style="font-size:21px">—</div></div>
+        <div class="stat"><div class="stat-lbl">Still pending</div><div class="stat-val amber" id="commPending" style="font-size:21px">—</div></div>
+        <div class="stat"><div class="stat-lbl">Already paid</div><div class="stat-val" id="commPaid" style="font-size:21px">—</div></div>
+        <div class="stat"><div class="stat-lbl">Records</div><div class="stat-val" id="commCount" style="font-size:21px">—</div></div>
+      </div>
+      <div class="tabs" id="commTabs">
+        <button class="tab on" onclick="setTab(this,'commTabs');renderCommissions('all')">All</button>
+        <button class="tab" onclick="setTab(this,'commTabs');renderCommissions('direct')">Direct</button>
+        <button class="tab" onclick="setTab(this,'commTabs');renderCommissions('cumulative')">Cumulative</button>
+        <button class="tab" onclick="setTab(this,'commTabs');renderCommissions('bonus')">Bonus</button>
+      </div>
+      <div class="card">
+        <div class="tw">
+          <table>
+            <thead><tr><th>Person</th><th>Role</th><th>Device</th><th>Type</th><th>Amount (UGX)</th><th>Date</th><th>Status</th><th></th></tr></thead>
+            <tbody id="commissionsTbody"><tr><td colspan="8" class="xs muted" style="text-align:center;padding:20px">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="pg" id="pg-performance">
+      <div class="hd"><h2>Performance Center</h2><span class="badge b-g"><span class="dot-live" style="width:5px;height:5px;margin-right:4px"></span>Live</span></div>
+      <div class="g2 mb16">
+        <div class="card">
+          <div class="hd2">Top managers, June 2025</div>
+          <div class="rank-row"><div class="rank-n r1">1</div><div style="flex:1"><div class="bold sm">Kato Peter</div><div class="xs muted">Kampala, 4 TLs, 18 agents</div></div><div style="text-align:right"><div class="bold green sm">UGX 98.4M</div><div class="xs muted">124 units</div></div></div>
+          <div class="rank-row"><div class="rank-n r2">2</div><div style="flex:1"><div class="bold sm">Nakamya Judith</div><div class="xs muted">Eastern, 3 TLs, 14 agents</div></div><div style="text-align:right"><div class="bold green sm">UGX 76.2M</div><div class="xs muted">98 units</div></div></div>
+          <div class="rank-row"><div class="rank-n r3">3</div><div style="flex:1"><div class="bold sm">Ssebuliba Mark</div><div class="xs muted">Western, 2 TLs, 11 agents</div></div><div style="text-align:right"><div class="bold sm">UGX 62.8M</div><div class="xs muted">76 units</div></div></div>
+          <div class="rank-row"><div class="rank-n r0">4</div><div style="flex:1"><div class="bold sm">Abaasa Robert</div><div class="xs muted">Northern, 2 TLs, 9 agents</div></div><div style="text-align:right"><div class="bold sm">UGX 41.3M</div><div class="xs muted">52 units</div></div></div>
+        </div>
+        <div class="card">
+          <div class="hd2">Top agents, June 2025</div>
+          <div class="rank-row"><div class="rank-n r1">1</div><div style="flex:1"><div class="bold sm">Apio Grace</div><div class="xs muted">Gulu, TL Ssali Moses</div></div><div style="text-align:right"><div class="bold green sm">UGX 18.2M</div><div class="xs muted">24 units</div></div></div>
+          <div class="rank-row"><div class="rank-n r2">2</div><div style="flex:1"><div class="bold sm">Mukasa Ronald</div><div class="xs muted">Kampala Nakawa</div></div><div style="text-align:right"><div class="bold green sm">UGX 16.5M</div><div class="xs muted">21 units</div></div></div>
+          <div class="rank-row"><div class="rank-n r3">3</div><div style="flex:1"><div class="bold sm">Nakato Sarah</div><div class="xs muted">Jinja, TL Kasozi</div></div><div style="text-align:right"><div class="bold sm">UGX 14.9M</div><div class="xs muted">19 units</div></div></div>
+          <div class="rank-row"><div class="rank-n r0">4</div><div style="flex:1"><div class="bold sm">Otim Charles</div><div class="xs muted">Mbale, Eastern</div></div><div style="text-align:right"><div class="bold sm">UGX 12.1M</div><div class="xs muted">16 units</div></div></div>
+          <div class="rank-row"><div class="rank-n r0">5</div><div style="flex:1"><div class="bold sm">Namukasa Lydia</div><div class="xs muted">Mbarara, Western</div></div><div style="text-align:right"><div class="bold sm">UGX 11.4M</div><div class="xs muted">15 units</div></div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="hd2">Manager performance over 6 months</div>
+        <div class="ch h260"><canvas id="cPerf"></canvas></div>
+      </div>
+    </div>
+    <div class="pg" id="pg-reports">
+      <div class="hd"><h2>Reports</h2></div>
+      <div class="g3 mb16">
+        <div class="card" style="cursor:pointer" onmouseenter="this.style.borderColor='var(--green)'" onmouseleave="this.style.borderColor='var(--border)'" onclick="emailReport('Daily sales report')"><div style="font-size:26px">📊</div><div class="bold mt8 mb4">Daily sales</div><div class="xs muted mb12">Transactions, revenue, agents, customers</div><div class="row"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();toast('This report needs live data wired up first — coming soon','var(--amber)')"><i class="fas fa-file-pdf"></i>PDF</button><button class="btn btn-mail btn-sm" onclick="event.stopPropagation();emailReport('Daily sales report')"><i class="fas fa-envelope"></i>Email</button></div></div>
+        <div class="card" style="cursor:pointer" onmouseenter="this.style.borderColor='var(--green)'" onmouseleave="this.style.borderColor='var(--border)'" onclick="emailReport('Inventory status report')"><div style="font-size:26px">📦</div><div class="bold mt8 mb4">Inventory status</div><div class="xs muted mb12">Stock positions, IMEI tracking, aging</div><div class="row"><button class="btn btn-g btn-sm" onclick="event.stopPropagation();downloadInventoryPDF()"><i class="fas fa-file-pdf"></i>PDF</button><button class="btn btn-mail btn-sm" onclick="event.stopPropagation();emailReport('Inventory status report')"><i class="fas fa-envelope"></i>Email</button></div></div>
+        <div class="card" style="cursor:pointer" onmouseenter="this.style.borderColor='var(--green)'" onmouseleave="this.style.borderColor='var(--border)'" onclick="emailReport('Recovery cases report')"><div style="font-size:26px">🛡️</div><div class="bold mt8 mb4">Recovery cases</div><div class="xs muted mb12">Cases, officers, outcomes, timelines</div><div class="row"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();toast('This report needs live data wired up first — coming soon','var(--amber)')"><i class="fas fa-file-pdf"></i>PDF</button><button class="btn btn-mail btn-sm" onclick="event.stopPropagation();emailReport('Recovery cases report')"><i class="fas fa-envelope"></i>Email</button></div></div>
+        <div class="card" style="cursor:pointer" onmouseenter="this.style.borderColor='var(--green)'" onmouseleave="this.style.borderColor='var(--border)'" onclick="emailReport('Commission report')"><div style="font-size:26px">💰</div><div class="bold mt8 mb4">Commissions</div><div class="xs muted mb12">Earnings by level and time period</div><div class="row"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();toast('This report needs live data wired up first — coming soon','var(--amber)')"><i class="fas fa-file-pdf"></i>PDF</button><button class="btn btn-mail btn-sm" onclick="event.stopPropagation();emailReport('Commission report')"><i class="fas fa-envelope"></i>Email</button></div></div>
+        <div class="card" style="cursor:pointer" onmouseenter="this.style.borderColor='var(--green)'" onmouseleave="this.style.borderColor='var(--border)'" onclick="emailReport('Financing summary report')"><div style="font-size:26px">🤝</div><div class="bold mt8 mb4">Financing summary</div><div class="xs muted mb12">Partner breakdown, defaults, arrears</div><div class="row"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();toast('This report needs live data wired up first — coming soon','var(--amber)')"><i class="fas fa-file-pdf"></i>PDF</button><button class="btn btn-mail btn-sm" onclick="event.stopPropagation();emailReport('Financing summary report')"><i class="fas fa-envelope"></i>Email</button></div></div>
+        <div class="card" style="cursor:pointer" onmouseenter="this.style.borderColor='var(--green)'" onmouseleave="this.style.borderColor='var(--border)'" onclick="emailReport('Regional breakdown report')"><div style="font-size:26px">🗺️</div><div class="bold mt8 mb4">Regional breakdown</div><div class="xs muted mb12">District performance, branches</div><div class="row"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();toast('This report needs live data wired up first — coming soon','var(--amber)')"><i class="fas fa-file-pdf"></i>PDF</button><button class="btn btn-mail btn-sm" onclick="event.stopPropagation();emailReport('Regional breakdown report')"><i class="fas fa-envelope"></i>Email</button></div></div>
+      </div>
+      <div class="card">
+        <div class="between mb16"><div class="hd2" style="margin:0">June 2025 summary</div><span class="badge b-g">Complete</span></div>
+        <div style="display:flex;flex-wrap:wrap;background:var(--card2);border-radius:10px;overflow:hidden;margin-bottom:16px">
+          <div style="flex:1;min-width:120px;padding:16px;text-align:center;border-right:1px solid var(--border)"><div class="xs muted mb4">Total revenue</div><div class="bold green lg">UGX 312M</div></div>
+          <div style="flex:1;min-width:120px;padding:16px;text-align:center;border-right:1px solid var(--border)"><div class="xs muted mb4">Units sold</div><div class="bold lg">348</div></div>
+          <div style="flex:1;min-width:120px;padding:16px;text-align:center;border-right:1px solid var(--border)"><div class="xs muted mb4">Avg price</div><div class="bold lg">UGX 897K</div></div>
+          <div style="flex:1;min-width:120px;padding:16px;text-align:center"><div class="xs muted mb4">Gross profit</div><div class="bold green lg">UGX 67M</div></div>
+        </div>
+        <div class="ch h260"><canvas id="cReports"></canvas></div>
+      </div>
+    </div>
+
+    <div class="pg" id="pg-uganda">
+      <div class="hd"><h2>Uganda Analytics</h2><span class="badge b-b">District level</span></div>
+      <div class="g2 mb16" style="grid-template-columns:1fr 2fr">
+        <div>
+          <div class="card mb12" style="position:relative">
+            <div class="hd2">Click any district</div>
+            <div class="map-tt" id="mapTT"></div>
+            <svg id="mapSvg" viewBox="0 0 400 460" style="width:100%;height:auto;display:block">
+              <path d="M185 240 L205 235 L215 250 L205 265 L185 260 Z" data-name="Kampala" data-val="UGX 142M" data-units="156"/>
+              <path d="M160 220 L190 215 L205 235 L185 240 L185 260 L165 265 L148 250 Z" data-name="Wakiso" data-val="UGX 84M" data-units="94"/>
+              <path d="M205 235 L235 230 L248 248 L235 260 L215 260 L205 265 Z" data-name="Mukono" data-val="UGX 28M" data-units="31"/>
+              <path d="M235 230 L268 228 L278 246 L262 260 L248 248 Z" data-name="Jinja" data-val="UGX 44M" data-units="49"/>
+              <path d="M268 228 L305 220 L315 245 L295 260 L278 246 Z" data-name="Mbale" data-val="UGX 36M" data-units="40"/>
+              <path d="M255 185 L295 178 L310 200 L295 220 L268 228 L248 210 Z" data-name="Soroti" data-val="UGX 18M" data-units="20"/>
+              <path d="M210 155 L255 145 L270 168 L255 185 L225 188 L205 170 Z" data-name="Lira" data-val="UGX 16M" data-units="18"/>
+              <path d="M168 105 L220 95 L235 120 L225 145 L210 155 L185 148 L162 130 Z" data-name="Gulu" data-val="UGX 56M" data-units="62"/>
+              <path d="M95 80 L155 72 L168 105 L162 130 L138 138 L100 120 Z" data-name="Arua" data-val="UGX 21M" data-units="23"/>
+              <path d="M118 158 L162 145 L185 148 L185 175 L165 188 L132 185 Z" data-name="Masindi" data-val="UGX 12M" data-units="13"/>
+              <path d="M88 200 L132 185 L148 200 L145 225 L118 238 L85 225 Z" data-name="Fort Portal" data-val="UGX 12M" data-units="13"/>
+              <path d="M118 290 L158 278 L165 295 L160 320 L130 330 L108 318 Z" data-name="Mbarara" data-val="UGX 30M" data-units="33"/>
+              <path d="M130 340 L165 330 L175 355 L155 375 L128 368 Z" data-name="Kabale" data-val="UGX 8M" data-units="9"/>
+              <path d="M148 260 L185 260 L190 278 L175 295 L155 295 L138 278 Z" data-name="Masaka" data-val="UGX 10M" data-units="11"/>
+              <path d="M82 248 L118 238 L130 255 L118 290 L90 285 L72 265 Z" data-name="Kasese" data-val="UGX 7M" data-units="8"/>
+              <path d="M295 178 L335 172 L345 198 L328 215 L315 200 Z" data-name="Moroto" data-val="UGX 4M" data-units="5"/>
+              <path d="M220 72 L275 62 L285 90 L265 110 L235 120 L220 95 Z" data-name="Kitgum" data-val="UGX 6M" data-units="7"/>
+              <path d="M185 148 L225 145 L235 165 L225 188 L205 185 L185 175 Z" data-name="Apac" data-val="UGX 9M" data-units="10"/>
+              <path d="M278 246 L295 260 L285 280 L265 278 L255 260 L262 260 Z" data-name="Tororo" data-val="UGX 14M" data-units="16"/>
+              <path d="M248 248 L265 244 L275 260 L262 270 L248 265 Z" data-name="Iganga" data-val="UGX 11M" data-units="12"/>
+            </svg>
+            <div class="xs muted mt8" style="text-align:center">Hover to preview, click to highlight</div>
+          </div>
+        </div>
+        <div>
+          <div class="card mb12">
+            <div class="hd2">Sales by district</div>
+            <div class="ch h260"><canvas id="cUganda"></canvas></div>
+          </div>
+          <div class="card">
+            <div class="hd2">District breakdown</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px">
+              <div style="background:var(--card2);border-radius:8px;padding:11px"><div class="bold xs mb4">Kampala</div><div class="bar mb4"><div class="bar-fill" style="width:100%;background:var(--green)"></div></div><div class="xs muted">UGX 142M, 156 units</div></div>
+              <div style="background:var(--card2);border-radius:8px;padding:11px"><div class="bold xs mb4">Wakiso</div><div class="bar mb4"><div class="bar-fill" style="width:59%;background:var(--green)"></div></div><div class="xs muted">UGX 84M, 94 units</div></div>
+              <div style="background:var(--card2);border-radius:8px;padding:11px"><div class="bold xs mb4">Gulu</div><div class="bar mb4"><div class="bar-fill" style="width:39%;background:var(--blue)"></div></div><div class="xs muted">UGX 56M, 62 units</div></div>
+              <div style="background:var(--card2);border-radius:8px;padding:11px"><div class="bold xs mb4">Jinja</div><div class="bar mb4"><div class="bar-fill" style="width:31%;background:var(--blue)"></div></div><div class="xs muted">UGX 44M, 49 units</div></div>
+              <div style="background:var(--card2);border-radius:8px;padding:11px"><div class="bold xs mb4">Mbale</div><div class="bar mb4"><div class="bar-fill" style="width:25%;background:var(--amber)"></div></div><div class="xs muted">UGX 36M, 40 units</div></div>
+              <div style="background:var(--card2);border-radius:8px;padding:11px"><div class="bold xs mb4">Mbarara</div><div class="bar mb4"><div class="bar-fill" style="width:21%;background:var(--amber)"></div></div><div class="xs muted">UGX 30M, 33 units</div></div>
+              <div style="background:var(--card2);border-radius:8px;padding:11px"><div class="bold xs mb4">Arua</div><div class="bar mb4"><div class="bar-fill" style="width:15%;background:var(--violet)"></div></div><div class="xs muted">UGX 21M, 23 units</div></div>
+              <div style="background:var(--card2);border-radius:8px;padding:11px"><div class="bold xs mb4">Lira</div><div class="bar mb4"><div class="bar-fill" style="width:11%;background:var(--violet)"></div></div><div class="xs muted">UGX 16M, 18 units</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pg" id="pg-warehouses">
+      <div class="hd"><h2>Warehouses and Branches</h2><button class="btn btn-g btn-sm" id="addWarehouseBtn" onclick="openM('mAddWarehouse')"><i class="fas fa-plus"></i>Add warehouse</button></div>
+      <div class="perm-banner" id="warehouseScopeBanner" style="display:none"><i class="fas fa-map-location-dot"></i><span id="warehouseScopeText"></span></div>
+      <div class="g3 mb16" id="warehousesList">
+        <div class="xs muted">Loading warehouses...</div>
+      </div>
+    </div>
+    <div class="pg" id="pg-users">
+      <div class="hd"><h2>User Management</h2><button class="btn btn-g btn-sm" id="createUserBtn" onclick="openM('mCreateUser')"><i class="fas fa-user-plus"></i>Create login</button></div>
+
+      <div class="perm-banner" id="usersPermBanner" style="display:none"><i class="fas fa-lock"></i><span>Only the Chief Executive Officer can create or delete user logins. You can view this directory but cannot make changes.</span></div>
+
+      <div class="stats">
+        <div class="stat"><div class="stat-lbl">Total users</div><div class="stat-val" id="statTotalUsers" style="font-size:26px">—</div></div>
+        <div class="stat"><div class="stat-lbl">Administrators</div><div class="stat-val" id="statAdmins" style="color:var(--violet);font-size:26px">—</div></div>
+        <div class="stat"><div class="stat-lbl">Managers</div><div class="stat-val blue" id="statManagers" style="font-size:26px">—</div></div>
+        <div class="stat"><div class="stat-lbl">Team Leaders</div><div class="stat-val" id="statTLs" style="font-size:26px">—</div></div>
+        <div class="stat"><div class="stat-lbl">Agents</div><div class="stat-val amber" id="statAgents" style="font-size:26px">—</div></div>
+        <div class="stat"><div class="stat-lbl">Shop Owners</div><div class="stat-val" id="statShops" style="font-size:26px">—</div></div>
+      </div>
+
+      <div class="card mb16">
+        <div class="hd2">Reporting structure</div>
+        <div class="xs muted mb12">How stock and authority flow through the company</div>
+        <div class="wf" style="margin-bottom:0">
+          <div class="wf-step"><div class="wf-num done" style="background:var(--amber);border-color:var(--amber);color:#1a1200">CEO</div><div class="wf-lbl done">Monalisa</div></div>
+          <div class="wf-line done"></div>
+          <div class="wf-step"><div class="wf-num done" style="background:var(--violet);border-color:var(--violet)">Ad</div><div class="wf-lbl done">Administrators</div></div>
+          <div class="wf-line done"></div>
+          <div class="wf-step"><div class="wf-num done">Mg</div><div class="wf-lbl done">Managers</div></div>
+          <div class="wf-line done"></div>
+          <div class="wf-step"><div class="wf-num active">TL</div><div class="wf-lbl active">Team Leaders</div></div>
+          <div class="wf-line"></div>
+          <div class="wf-step"><div class="wf-num">Ag</div><div class="wf-lbl">Agents / Shop Owners</div></div>
+        </div>
+      </div>
+
+      <div class="tabs" id="userTabs">
+        <button class="tab on" onclick="setTab(this,'userTabs');filterUsers('')">All users</button>
+        <button class="tab" id="tabAdmins" onclick="setTab(this,'userTabs');filterUsers('admin')">Admins</button>
+        <button class="tab" id="tabManagers" onclick="setTab(this,'userTabs');filterUsers('manager')">Managers</button>
+        <button class="tab" onclick="setTab(this,'userTabs');filterUsers('teamleader')">Team Leaders</button>
+        <button class="tab" onclick="setTab(this,'userTabs');filterUsers('agent')">Agents</button>
+        <button class="tab" id="tabShops" onclick="setTab(this,'userTabs');filterUsers('shopowner')">Shop Owners</button>
+        <button class="tab" id="tabRecovery" onclick="setTab(this,'userTabs');filterUsers('recovery')">Recovery</button>
+      </div>
+      <div class="card">
+        <div class="tw">
+          <table>
+            <thead><tr><th>Name</th><th>Role</th><th>Phone</th><th>District</th><th>Reports to</th><th>Joined</th><th>Status</th><th></th></tr></thead>
+            <tbody id="usersTbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="pg" id="pg-security">
+      <div class="hd"><h2>Security Center</h2><span class="badge b-g"><i class="fas fa-shield-halved" style="margin-right:4px"></i>Protected</span></div>
+      <div class="g2 mb16">
+        <div class="card">
+          <div class="hd2">Your session</div>
+          <div class="sec-row"><div><div class="bold sm">Auto-lock after inactivity</div><div class="xs muted">Lock the screen after 5 minutes of no activity</div></div><div class="toggle on" id="toggleAutolock" onclick="toggleSetting(this)"></div></div>
+          <div class="sec-row"><div><div class="bold sm">Login alerts</div><div class="xs muted">Notify CEO by WhatsApp on every new device login</div></div><div class="toggle on" id="toggleLoginAlerts" onclick="toggleSetting(this)"></div></div>
+          <div class="sec-row"><div><div class="bold sm">Require password on sensitive actions</div><div class="xs muted">Re-confirm password before deleting users or overriding allocations</div></div><div class="toggle on" id="toggleSensitive" onclick="toggleSetting(this)"></div></div>
+          <div class="sec-row"><div><div class="bold sm">Two-factor verification</div><div class="xs muted">SMS code required at login, in addition to password</div></div><div class="toggle" id="toggle2fa" onclick="toggleSetting(this)"></div></div>
+        </div>
+        <div class="card">
+          <div class="hd2">Recent sign-ins</div>
+          <div class="tl">
+            <div class="tl-item"><div class="tl-dot" style="background:var(--green)"></div><div class="tl-when">Today, 08:47 AM</div><div class="tl-what">Signed in successfully</div><div class="tl-who">iPad, Safari, Kampala — this device</div></div>
+            <div class="tl-item"><div class="tl-dot" style="background:var(--green)"></div><div class="tl-when">Yesterday, 06:12 PM</div><div class="tl-what">Signed in successfully</div><div class="tl-who">iPhone, Safari, Kampala</div></div>
+            <div class="tl-item"><div class="tl-dot" style="background:var(--amber)"></div><div class="tl-when">17 Jun 2025, 11:03 PM</div><div class="tl-what">Sign-in from a new device</div><div class="tl-who">Android, Chrome, Kampala — approved</div></div>
+            <div class="tl-item"><div class="tl-dot" style="background:var(--red)"></div><div class="tl-when">15 Jun 2025, 02:40 AM</div><div class="tl-what">Failed sign-in attempt</div><div class="tl-who">Unknown device, Nairobi, Kenya — blocked, wrong password 3 times</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="between mb12"><div class="hd2" style="margin:0">Password policy</div><span class="badge b-g">Enforced</span></div>
+        <div class="g3">
+          <div class="card-sm"><div class="bold sm mb4"><i class="fas fa-key amber"></i> Minimum length</div><div class="xs muted">8 characters, at least one number</div></div>
+          <div class="card-sm"><div class="bold sm mb4"><i class="fas fa-rotate blue"></i> Reset cycle</div><div class="xs muted">CEO can force a reset for any account, any time</div></div>
+          <div class="card-sm"><div class="bold sm mb4"><i class="fas fa-ban red"></i> Lockout rule</div><div class="xs muted">3 failed attempts locks the account for 15 minutes</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pg" id="pg-integrations">
+      <div class="hd"><h2>Integrations</h2></div>
+      <div class="g2 mb16">
+        <div class="card">
+          <div class="row mb12"><div style="width:42px;height:42px;background:rgba(37,211,102,.15);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:19px;color:#25d366"><i class="fab fa-whatsapp"></i></div><div><div class="bold">WhatsApp Business</div><div class="xs muted">Connected to +256 703 953 711</div></div><span class="badge b-g" style="margin-left:auto">Connected</span></div>
+          <div class="xs muted mb12">Sends receipts, recovery alerts, and aged-stock warnings straight to Monalisa's WhatsApp. Every message opens directly in WhatsApp, pre-filled and ready to send.</div>
+          <div class="sec-row"><div><div class="bold sm">Aged stock alerts (21+ days)</div></div><div class="toggle on" onclick="toggleSetting(this)"></div></div>
+          <div class="sec-row"><div><div class="bold sm">New sale receipts</div></div><div class="toggle on" onclick="toggleSetting(this)"></div></div>
+          <div class="sec-row"><div><div class="bold sm">Recovery case updates</div></div><div class="toggle on" onclick="toggleSetting(this)"></div></div>
+          <div class="sec-row"><div><div class="bold sm">New login from unknown device</div></div><div class="toggle on" onclick="toggleSetting(this)"></div></div>
+          <button class="btn btn-wa btn-sm mt12" onclick="testWA()"><i class="fab fa-whatsapp"></i>Send a test message</button>
+        </div>
+        <div class="card">
+          <div class="row mb12"><div style="width:42px;height:42px;background:rgba(76,110,245,.15);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--blue)"><i class="fas fa-envelope"></i></div><div><div class="bold">Email notifications</div><div class="xs muted">Connected to kabuusumonalisa@gmail.com</div></div><span class="badge b-g" style="margin-left:auto">Connected</span></div>
+          <div class="xs muted mb12">Daily and monthly reports, plus copies of every receipt, are emailed automatically. Clicking any "Email" button opens a draft in your mail app addressed to Monalisa.</div>
+          <div class="sec-row"><div><div class="bold sm">Daily sales summary, 9:00 PM</div></div><div class="toggle on" onclick="toggleSetting(this)"></div></div>
+          <div class="sec-row"><div><div class="bold sm">Monthly performance report</div></div><div class="toggle on" onclick="toggleSetting(this)"></div></div>
+          <div class="sec-row"><div><div class="bold sm">Financing partner defaults</div></div><div class="toggle on" onclick="toggleSetting(this)"></div></div>
+          <div class="sec-row"><div><div class="bold sm">New admin or manager created</div></div><div class="toggle on" onclick="toggleSetting(this)"></div></div>
+          <button class="btn btn-mail btn-sm mt12" onclick="testEmail()"><i class="fas fa-envelope"></i>Send a test email</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="hd2">Delivery log</div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>Time</th><th>Channel</th><th>Type</th><th>Recipient</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td class="xs muted">09:18 AM</td><td><span class="badge" style="background:rgba(37,211,102,.12);color:#25d366"><i class="fab fa-whatsapp"></i> WhatsApp</span></td><td>Aged stock alert</td><td>+256703953711</td><td><span class="badge b-g">Delivered</span></td></tr>
+              <tr><td class="xs muted">08:32 AM</td><td><span class="badge" style="background:rgba(37,211,102,.12);color:#25d366"><i class="fab fa-whatsapp"></i> WhatsApp</span></td><td>Sale receipt</td><td>+256703953711</td><td><span class="badge b-g">Delivered</span></td></tr>
+              <tr><td class="xs muted">Yesterday, 09:00 PM</td><td><span class="badge b-b"><i class="fas fa-envelope"></i> Email</td><td>Daily sales summary</td><td>kabuusumonalisa@gmail.com</td><td><span class="badge b-g">Delivered</span></td></tr>
+              <tr><td class="xs muted">Yesterday, 03:14 PM</td><td><span class="badge" style="background:rgba(37,211,102,.12);color:#25d366"><i class="fab fa-whatsapp"></i> WhatsApp</span></td><td>Recovery case opened</td><td>+256703953711</td><td><span class="badge b-g">Delivered</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="pg" id="pg-auditlogs">
+      <div class="hd"><h2>Audit Logs</h2><button class="btn btn-ghost btn-sm"><i class="fas fa-download"></i>Export</button></div>
+      <div class="card">
+        <div class="tw">
+          <table>
+            <thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Module</th><th>Details</th><th>Device</th><th>Location</th></tr></thead>
+            <tbody>
+              <tr><td class="xs muted">08:47:12</td><td class="bold">CEO Monalisa</td><td><span class="badge b-a" style="font-size:9.5px">CEO</span></td><td>LOGIN</td><td>Auth</td><td>Successful login</td><td>iPad / Safari</td><td>Kampala</td></tr>
+              <tr><td class="xs muted">08:15:40</td><td class="bold">Namugga Sarah</td><td><span class="badge b-v" style="font-size:9.5px">Admin</span></td><td>LOGIN</td><td>Auth</td><td>Successful login</td><td>Windows / Chrome</td><td>Kampala HQ</td></tr>
+              <tr><td class="xs muted">08:45:03</td><td class="bold">Kato Peter</td><td><span class="badge b-b" style="font-size:9.5px">Manager</span></td><td>ALLOCATE</td><td>Stock</td><td>8 units to Agent Mukasa Ronald</td><td>Android / Chrome</td><td>Kampala</td></tr>
+              <tr><td class="xs muted">09:02:41</td><td class="bold">Apio Grace</td><td><span class="badge b-g" style="font-size:9.5px">Agent</span></td><td>SALE</td><td>Sales</td><td>Tecno Spark 20, Mukasa David</td><td>Android / App</td><td>Gulu</td></tr>
+              <tr><td class="xs muted">09:18:55</td><td class="bold">System</td><td><span class="badge b-r" style="font-size:9.5px">AUTO</span></td><td>ALERT</td><td>Recovery</td><td>Samsung A55 aged 32 days, WhatsApp sent</td><td>Server</td><td>System</td></tr>
+              <tr><td class="xs muted">07:34:11</td><td class="bold">Ssenyonga J.</td><td><span class="badge b-r" style="font-size:9.5px">Recovery</span></td><td>RECOVER</td><td>Recovery</td><td>Infinix Hot 40i returned to CEO</td><td>Android</td><td>Kampala</td></tr>
+              <tr style="background:rgba(232,69,69,.04)"><td class="xs muted">02:40:18</td><td class="bold red">Unknown</td><td><span class="badge b-r" style="font-size:9.5px">BLOCKED</span></td><td>LOGIN_FAIL</td><td>Auth</td><td>3 failed attempts, account locked 15 min</td><td>Unknown</td><td>Nairobi, Kenya</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="pg" id="pg-settings">
+      <div class="hd"><h2>Settings</h2></div>
+
+      <div class="perm-banner" id="settingsPermBanner" style="display:none"><i class="fas fa-lock"></i><span>Only the CEO and Administrators can change company settings. You can view this page but not edit it.</span></div>
+
+      <div class="g2 mb16">
+        <div class="card">
+          <div class="hd2">Company info</div>
+          <div class="fg"><label class="lbl">Company name</label><input class="inp" id="setCompanyName" readonly></div>
+          <div class="fg"><label class="lbl">Address</label><input class="inp" id="setCompanyAddress" readonly></div>
+          <div class="fg"><label class="lbl">Business email</label><input class="inp" id="setCompanyEmail" readonly></div>
+          <div class="xs muted">To change your registered business details, contact Monalisa Tech Solutions support.</div>
+        </div>
+        <div class="card">
+          <div class="hd2">Stock aging policy — field staff</div>
+          <div class="xs muted mb12">Applies to Agents, Team Leaders, and Managers. Sets when a device's color changes and when it's pulled into Recovery.</div>
+          <div class="fg"><label class="lbl">Good (green) — up to this many days</label><input class="inp" type="number" id="ageGoodField" min="1" value="9"></div>
+          <div class="fg"><label class="lbl">Warning (orange) — up to this many days</label><input class="inp" type="number" id="ageWarnField" min="1" value="20"></div>
+          <div class="xs muted mb8">Anything older than the warning cutoff turns red and moves into Recovery automatically.</div>
+          <button class="btn btn-g btn-sm" id="saveAgeFieldBtn" onclick="saveAgingPolicy('field')">Save field staff policy</button>
+        </div>
+        <div class="card">
+          <div class="hd2">Stock aging policy — shop owners</div>
+          <div class="xs muted mb12">Set separately from field staff, since shop stock often moves differently.</div>
+          <div class="fg"><label class="lbl">Good (green) — up to this many days</label><input class="inp" type="number" id="ageGoodShop" min="1" value="14"></div>
+          <div class="fg"><label class="lbl">Warning (orange) — up to this many days</label><input class="inp" type="number" id="ageWarnShop" min="1" value="30"></div>
+          <button class="btn btn-g btn-sm" id="saveAgeShopBtn" onclick="saveAgingPolicy('shop')">Save shop owner policy</button>
+        </div>
+      </div>
+
+      <div class="card mb16">
+        <div class="between mb12"><div class="hd2" style="margin:0">Commission per device sold</div><span class="xs muted">A fixed UGX amount, paid directly to whoever made the sale</span></div>
+        <div class="g2">
+          <div class="fg"><label class="lbl">Agent — UGX per device sold</label><input class="inp" type="number" id="rateAgent" step="1000" min="0" placeholder="e.g. 20000"></div>
+          <div class="fg"><label class="lbl">Shop Owner — UGX per device sold</label><input class="inp" type="number" id="rateShopowner" step="1000" min="0" placeholder="e.g. 20000"></div>
+        </div>
+        <div class="xs muted mb8">A Manager or Team Leader who personally makes a sale earns this same direct amount too — they're not excluded from selling.</div>
+        <button class="btn btn-g btn-sm" id="saveRolesBtn" onclick="saveCommissionRates()">Save direct commission</button>
+      </div>
+
+      <div class="card mb16">
+        <div class="between mb12"><div class="hd2" style="margin:0">Cumulative commission</div><span class="xs muted">Paid automatically the moment someone in their team sells — no extra step</span></div>
+        <div class="g2">
+          <div class="fg"><label class="lbl">Team Leader — UGX per sale by their Agents</label><input class="inp" type="number" id="rateTeamleaderCum" step="500" min="0" placeholder="e.g. 5000"></div>
+          <div class="fg"><label class="lbl">Manager — UGX per sale by their Team Leaders' teams</label><input class="inp" type="number" id="rateManagerCum" step="500" min="0" placeholder="e.g. 3000"></div>
+        </div>
+        <div class="xs muted mb8">This is separate from direct commission above. A Team Leader earns this every time ANY agent under them sells a device — automatically, instantly, on top of anything they earn from their own personal sales.</div>
+        <button class="btn btn-g btn-sm" onclick="saveCommissionRates()">Save cumulative commission</button>
+      </div>
+
+      <div class="card mb16">
+        <div class="between mb12"><div class="hd2" style="margin:0">Bonus commissions</div><span class="badge" id="bonusStatusBadge">Optional</span></div>
+        <div class="sec-row"><div><div class="bold sm">Enable bonus commissions</div><div class="xs muted">Extra payout on top of normal commission, your call entirely</div></div><div class="toggle" id="toggleBonusEnabled" onclick="toggleBonusEnabled(this)"></div></div>
+        <div id="bonusAmountFields" style="display:none">
+          <div class="g2 mt12">
+            <div class="fg"><label class="lbl">Agent / Shop Owner bonus (UGX)</label><input class="inp" type="number" id="bonusAgent" step="1000" min="0"></div>
+            <div class="fg"><label class="lbl">Team Leader / Manager bonus (UGX)</label><input class="inp" type="number" id="bonusLeader" step="1000" min="0"></div>
+          </div>
+          <div class="xs muted mb8">Applied on top of regular commission for every qualifying sale, only while this toggle is on.</div>
+        </div>
+        <button class="btn btn-g btn-sm" onclick="saveCommissionRates()">Save bonus settings</button>
+      </div>
+
+      <div class="card mb16">
+        <div class="between mb12"><div class="hd2" style="margin:0">Commission per phone (optional overrides)</div><span class="xs muted">Set a fixed commission for specific brands or models, overriding the role amount above</span></div>
+        <div class="xs muted mb12">Leave blank to use the role amount above for that brand.</div>
+        <div id="brandCommissionList" class="gap mb12"><div class="xs muted">Add a brand first under "Brands you sell" below.</div></div>
+      </div>
+
+      <div class="card mb16">
+        <div class="between mb12"><div class="hd2" style="margin:0">Brands you sell</div><button class="btn btn-g btn-sm" id="addBrandBtn" onclick="addCompanyBrand()"><i class="fas fa-plus"></i>Add brand</button></div>
+        <div class="row mb12"><input class="inp" id="newBrandName" placeholder="e.g. Samsung, Tecno, Infinix..." style="max-width:260px"></div>
+        <div id="companyBrandsList" class="row" style="flex-wrap:wrap;gap:8px"><div class="xs muted">No brands added yet.</div></div>
+      </div>
+
+      <div class="card">
+        <div class="hd2">Your company's support contact</div>
+        <div class="xs muted mb12">This is what YOUR staff will see and contact for help — separate from Monalisa Tech Solutions' own number, which is only for CEOs and Admins reporting platform issues.</div>
+        <div class="g2">
+          <div class="fg"><label class="lbl">WhatsApp number for your staff</label><input class="inp" id="setWhatsapp" placeholder="+256 7XX XXX XXX"></div>
+          <div class="fg"><label class="lbl">Support email for your staff</label><input class="inp" id="setSupportEmail" placeholder="support@yourcompany.com"></div>
+        </div>
+        <button class="btn btn-g btn-sm" id="saveContactBtn" onclick="saveCompanyContact()">Save contact details</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+<div class="mwrap" id="mCreateUser">
+  <div class="modal">
+    <div class="m-hd"><h3>Create new login</h3><button class="m-x" onclick="closeM('mCreateUser')"><i class="fas fa-times"></i></button></div>
+    <div class="m-body">
+      <div class="perm-banner" id="createUserBanner" style="margin-bottom:18px"><i class="fas fa-shield-halved"></i><span id="createUserBannerText">This creates a real login. The person will sign in with the email and password you set below.</span></div>
+      <div class="login-err" id="createUserErr"><i class="fas fa-circle-exclamation"></i><span id="createUserErrText"></span></div>
+
+      <div class="lbl">Basic details</div>
+      <div class="g2 mt8">
+        <div class="fg"><label class="lbl">Full name</label><input class="inp" placeholder="Full name" id="nuName"></div>
+        <div class="fg"><label class="lbl">Role</label><select class="inp" id="nuRole" onchange="populateReportsTo()"><option value="admin">Administrator</option><option value="regionalmanager">Regional Manager</option><option value="manager">Manager</option><option value="teamleader">Team Leader</option><option value="agent">Agent</option><option value="shopowner">Shop Owner</option><option value="recovery">Recovery Officer</option></select></div>
+        <div class="fg"><label class="lbl">Age</label><input class="inp" type="number" min="18" max="100" placeholder="Age in years" id="nuAge"></div>
+        <div class="fg"><label class="lbl">Email (becomes login ID)</label><input class="inp" type="email" placeholder="name@company.com" id="nuEmail"></div>
+        <div class="fg"><label class="lbl">Phone number</label><input class="inp" placeholder="+256 7XX XXX XXX" id="nuPhone" inputmode="tel"></div>
+        <div class="fg"><label class="lbl">Reports to</label><select class="inp" id="nuReportsTo"><option value="">Loading...</option></select></div>
+      </div>
+
+      <div id="teamNameField" class="fg" style="display:none;margin-top:8px">
+        <label class="lbl">Team name</label>
+        <input class="inp" id="nuTeamName" placeholder="e.g. Team Falcon, Northside Squad...">
+        <div class="xs muted mt4">Gives this Manager or Team Leader's group an easy name for sales tracking. Agents created under them inherit this team automatically.</div>
+      </div>
+      <div id="regionalManagerFields" style="display:none">
+        <div class="g2 mt8">
+          <div class="fg"><label class="lbl">Assigned region</label><select class="inp" id="nuAssignedRegion"><option value="">Select a region</option><option>Central</option><option>Eastern</option><option>Northern</option><option>Western</option></select></div>
+          <div class="fg"><label class="lbl">Monthly pay (UGX)</label><input class="inp" type="number" id="nuMonthlyPay" placeholder="e.g. 1500000"></div>
+        </div>
+        <div class="fg"><label class="lbl">Contract / agreement notes</label><textarea class="inp" rows="2" id="nuContractNotes" placeholder="Reference to the signed agreement, terms, start date..."></textarea></div>
+        <div class="xs muted mb8">This is a monthly payroll arrangement determined and documented by the CEO directly — not calculated automatically like sales commissions.</div>
+      </div>
+
+      <div class="lbl" style="margin-top:14px">Location</div>
+      <div class="g2 mt8">
+        <div class="fg"><label class="lbl">Country</label><input class="inp" id="nuCountry" value="Uganda"></div>
+        <div class="fg"><label class="lbl">Region</label><input class="inp" id="nuRegion" placeholder="e.g. Central"></div>
+        <div class="fg"><label class="lbl">District</label><input class="inp" id="nuDistrict" placeholder="e.g. Kampala"></div>
+        <div class="fg"><label class="lbl">Sub county</label><input class="inp" id="nuSubCounty" placeholder=""></div>
+        <div class="fg"><label class="lbl">Parish</label><input class="inp" id="nuParish" placeholder=""></div>
+        <div class="fg"><label class="lbl">Village</label><input class="inp" id="nuVillage" placeholder=""></div>
+      </div>
+
+      <div class="lbl" style="margin-top:14px">National ID</div>
+      <div class="xs muted mb8">Only the CEO and Administrators can view these photos. They're used for identity reference only.</div>
+      <div class="g2">
+        <div class="fg"><label class="lbl">National ID — front</label><input class="inp" type="file" accept="image/*" id="nuIdFront"></div>
+        <div class="fg"><label class="lbl">National ID — back</label><input class="inp" type="file" accept="image/*" id="nuIdBack"></div>
+      </div>
+
+      <div class="fg" style="margin-top:14px"><label class="lbl">Temporary password</label><input class="inp" type="text" value="" placeholder="At least 6 characters — share this with them" id="nuPass" style="font-family:monospace"></div>
+      <div class="xs muted">They'll be able to change this password themselves after logging in. Write it down or send it via WhatsApp below before closing this window — it won't be shown again.</div>
+    </div>
+    <div class="m-foot">
+      <button class="btn btn-o" onclick="closeM('mCreateUser')">Cancel</button>
+      <button class="btn btn-wa" onclick="shareNewUserWA()"><i class="fab fa-whatsapp"></i>Send login via WhatsApp</button>
+      <button class="btn btn-g" id="createUserSubmitBtn" onclick="doCreateUser()">Create login</button>
+    </div>
+  </div>
+</div>
+
+<div class="mwrap" id="mAllocate">
+  <div class="modal">
+    <div class="m-hd"><h3>New stock allocation</h3><button class="m-x" onclick="closeM('mAllocate')"><i class="fas fa-times"></i></button></div>
+    <div class="m-body">
+      <div class="perm-banner" id="allocModalBanner" style="display:none"><i class="fas fa-circle-info"></i><span id="allocModalText"></span></div>
+      <div class="fg"><label class="lbl">From</label><select class="inp" id="allocFrom"><option>CEO Master Stock</option></select></div>
+      <div class="fg"><label class="lbl">To</label><select class="inp" id="allocTo"></select></div>
+      <div class="fg"><label class="lbl">Brand</label><select class="inp" id="allocBrand" onchange="loadAllocIMEI()"><option>Samsung</option><option>Tecno</option><option>Infinix</option><option>Itel</option></select></div>
+      <div class="fg"><label class="lbl">Select units (IMEI)</label><div id="allocList" style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:10px;max-height:130px;overflow-y:auto"></div></div>
+      <div class="fg"><label class="lbl">Reason (optional)</label><textarea class="inp" rows="2" placeholder="Why you are sending these units..."></textarea></div>
+    </div>
+    <div class="m-foot"><button class="btn btn-o" onclick="closeM('mAllocate')">Cancel</button><button class="btn btn-g" onclick="doSendAlloc()">Send allocation</button></div>
+  </div>
+</div>
+
+<div class="mwrap" id="mNewSale">
+  <div class="modal">
+    <div class="m-hd"><h3>Record a sale</h3><button class="m-x" onclick="closeM('mNewSale')"><i class="fas fa-times"></i></button></div>
+    <div class="m-body">
+      <div class="fg">
+        <label class="lbl">Sale type</label>
+        <div class="row">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12.5px"><input type="radio" name="st" value="cash" checked> Cash</label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12.5px"><input type="radio" name="st" value="finance"> Financed</label>
+        </div>
+      </div>
+      <div class="g2">
+        <div class="fg"><label class="lbl">Brand</label><select class="inp" id="saleBrand" onchange="loadSaleIMEI()"><option>Tecno</option><option>Samsung</option><option>Infinix</option><option>Itel</option></select></div>
+        <div class="fg"><label class="lbl">IMEI</label><select class="inp" id="saleIMEI"><option>352001234567890 — Tecno Spark 20 Pro</option></select></div>
+        <div class="fg"><label class="lbl">Customer name</label><input class="inp" placeholder="Full name" id="saleCustName" required></div>
+        <div class="fg"><label class="lbl">Customer phone</label><input class="inp" placeholder="+256 7XX XXX XXX" id="saleCustPhone" inputmode="tel" required></div>
+        <div class="fg"><label class="lbl">National ID</label><input class="inp" placeholder="CM12345678AB" id="saleCustNid"></div>
+        <div class="fg"><label class="lbl">Selling price (UGX)</label><input class="inp" type="number" placeholder="485000" id="salePrice" min="1000" required></div>
+      </div>
+    </div>
+    <div class="m-foot"><button class="btn btn-o" onclick="closeM('mNewSale')">Cancel</button><button class="btn btn-g" onclick="doSale()"><i class="fas fa-receipt"></i>Record and print receipt</button></div>
+  </div>
+</div>
+
+<div class="mwrap" id="mAddDevice">
+  <div class="modal">
+    <div class="m-hd"><h3>Add devices to inventory</h3><button class="m-x" onclick="closeM('mAddDevice')"><i class="fas fa-times"></i></button></div>
+    <div class="m-body">
+      <div class="perm-banner" id="addDevBanner" style="display:none"><i class="fas fa-circle-info"></i><span id="addDevText"></span></div>
+      <div class="tabs" id="addDevTabs">
+        <button class="tab on" onclick="setTab(this,'addDevTabs')">Single device</button>
+        <button class="tab" onclick="setTab(this,'addDevTabs')">Bulk IMEI list</button>
+        <button class="tab" onclick="setTab(this,'addDevTabs')">Excel import</button>
+      </div>
+      <div class="g2">
+        <div class="fg"><label class="lbl">Brand</label><select class="inp"><option>Samsung</option><option>Tecno</option><option>Infinix</option><option>Itel</option><option>Nokia</option><option>Redmi</option><option>Oppo</option><option>Vivo</option><option>Huawei</option></select></div>
+        <div class="fg"><label class="lbl">Model</label><input class="inp" placeholder="e.g. Galaxy A55 5G" required></div>
+        <div class="fg"><label class="lbl">RAM</label><select class="inp"><option>2GB</option><option>3GB</option><option>4GB</option><option>6GB</option><option>8GB</option><option>12GB</option></select></div>
+        <div class="fg"><label class="lbl">Storage</label><select class="inp"><option>32GB</option><option>64GB</option><option>128GB</option><option>256GB</option></select></div>
+        <div class="fg"><label class="lbl">Color</label><input class="inp" placeholder="e.g. Awesome Blue"></div>
+        <div class="fg"><label class="lbl">IMEI</label><input class="inp" placeholder="15-digit IMEI" maxlength="15" minlength="14" inputmode="numeric" pattern="[0-9]{14,15}" title="IMEI must be 14-15 digits" required></div>
+        <div class="fg"><label class="lbl">Purchase price (UGX)</label><input class="inp" type="number" placeholder="980000" min="1000" required></div>
+        <div class="fg"><label class="lbl">Selling price (UGX)</label><input class="inp" type="number" placeholder="1250000" min="1000" required></div>
+      </div>
+      <div class="fg"><label class="lbl">Goes into</label><select class="inp" id="addDevDest"></select></div>
+    </div>
+    <div class="m-foot"><button class="btn btn-o" onclick="closeM('mAddDevice')">Cancel</button><button class="btn btn-g" onclick="doAddDevice()">Add stock</button></div>
+  </div>
+</div>
+
+<div class="mwrap" id="mAddCustomer">
+  <div class="modal">
+    <div class="m-hd"><h3>Add customer</h3><button class="m-x" onclick="closeM('mAddCustomer')"><i class="fas fa-times"></i></button></div>
+    <div class="m-body">
+      <div class="g2">
+        <div class="fg"><label class="lbl">Full name</label><input class="inp" placeholder="Full name" id="custName" required></div>
+        <div class="fg"><label class="lbl">Phone</label><input class="inp" placeholder="+256 7XX XXX XXX" id="custPhone" required></div>
+        <div class="fg"><label class="lbl">National ID</label><input class="inp" placeholder="CM12345678AB" id="custNid"></div>
+        <div class="fg"><label class="lbl">District</label><select class="inp" id="custDistrictAdd"><option>Kampala</option><option>Wakiso</option><option>Gulu</option><option>Jinja</option><option>Mbale</option><option>Mbarara</option></select></div>
+      </div>
+      <div class="fg"><label class="lbl">Village</label><input class="inp" placeholder="Village name" id="custVillage"></div>
+    </div>
+    <div class="m-foot"><button class="btn btn-o" onclick="closeM('mAddCustomer')">Cancel</button><button class="btn btn-g" onclick="doAddCustomer()">Save customer</button></div>
+  </div>
+</div>
+
+<div class="mwrap" id="mAddFinancePartner">
+  <div class="modal">
+    <div class="m-hd"><h3>Add a financing partner</h3><button class="m-x" onclick="closeM('mAddFinancePartner')"><i class="fas fa-times"></i></button></div>
+    <div class="m-body">
+      <div class="fg"><label class="lbl">Partner name</label><input class="inp" id="fpName" placeholder="e.g. Watu Credit, your own SACCO, a local bank..."></div>
+      <div class="g2">
+        <div class="fg"><label class="lbl">Contact phone</label><input class="inp" id="fpPhone" placeholder="+256 7XX XXX XXX"></div>
+        <div class="fg"><label class="lbl">Contact email</label><input class="inp" type="email" id="fpEmail" placeholder="loans@partner.com"></div>
+      </div>
+      <div class="fg"><label class="lbl">Typical interest / markup (optional)</label><input class="inp" type="text" id="fpInterest" placeholder="e.g. 15% over 6 months, or leave blank"></div>
+      <div class="fg"><label class="lbl">Notes</label><textarea class="inp" rows="2" id="fpNotes" placeholder="Terms, contact person, anything useful to remember"></textarea></div>
+    </div>
+    <div class="m-foot"><button class="btn btn-o" onclick="closeM('mAddFinancePartner')">Cancel</button><button class="btn btn-g" onclick="doAddFinancePartner()">Add partner</button></div>
+  </div>
+</div>
+
+<div class="mwrap" id="mAddFinancedSale">
+  <div class="modal">
+    <div class="m-hd"><h3>Record a financed sale</h3><button class="m-x" onclick="closeM('mAddFinancedSale')"><i class="fas fa-times"></i></button></div>
+    <div class="m-body">
+      <div class="login-err" id="finSaleErr"><i class="fas fa-circle-exclamation"></i><span id="finSaleErrText"></span></div>
+      <div class="fg"><label class="lbl">Financing partner</label><select class="inp" id="finPartnerSelect"><option value="">Select a partner</option></select></div>
+      <div class="fg"><label class="lbl">Device</label><select class="inp" id="finDeviceSelect"><option value="">Select a device you currently hold</option></select></div>
+      <div class="g2">
+        <div class="fg"><label class="lbl">Customer name</label><input class="inp" id="finCustName" placeholder="Full name"></div>
+        <div class="fg"><label class="lbl">Customer phone</label><input class="inp" id="finCustPhone" placeholder="+256 7XX XXX XXX"></div>
+      </div>
+      <div class="g2">
+        <div class="fg"><label class="lbl">Total price (UGX)</label><input class="inp" type="number" id="finTotalPrice" placeholder="e.g. 950000"></div>
+        <div class="fg"><label class="lbl">Down payment (UGX)</label><input class="inp" type="number" id="finDownPayment" placeholder="e.g. 200000"></div>
+      </div>
+      <div class="g2">
+        <div class="fg"><label class="lbl">Number of installments</label><input class="inp" type="number" id="finInstallments" placeholder="e.g. 6"></div>
+        <div class="fg"><label class="lbl">Frequency</label><select class="inp" id="finFrequency"><option>Weekly</option><option>Monthly</option></select></div>
+      </div>
+    </div>
+    <div class="m-foot"><button class="btn btn-o" onclick="closeM('mAddFinancedSale')">Cancel</button><button class="btn btn-g" id="finSaleSubmitBtn" onclick="doRecordFinancedSale()">Record financed sale</button></div>
+  </div>
+</div>
+
+<div class="mwrap" id="mAddWarehouse">
+  <div class="modal">
+    <div class="m-hd"><h3>Add warehouse or branch</h3><button class="m-x" onclick="closeM('mAddWarehouse')"><i class="fas fa-times"></i></button></div>
+    <div class="m-body">
+      <div class="fg"><label class="lbl">Warehouse name</label><input class="inp" id="whName" placeholder="e.g. Mbarara Western Branch"></div>
+      <div class="fg"><label class="lbl">Location / address</label><input class="inp" id="whLocation" placeholder="Town, district"></div>
+      <div class="fg"><label class="lbl">Region</label><select class="inp" id="whRegion"><option value="">Select a region</option><option>Central</option><option>Eastern</option><option>Northern</option><option>Western</option></select></div>
+      <div class="fg"><label class="lbl">Branch manager</label><select class="inp" id="whManagerUid"><option value="">Loading...</option></select></div>
+    </div>
+    <div class="m-foot"><button class="btn btn-o" onclick="closeM('mAddWarehouse')">Cancel</button><button class="btn btn-g" onclick="doAddWarehouse()">Create warehouse</button></div>
+  </div>
+</div>
+
+<div class="mwrap" id="mReportIssue">
+  <div class="modal">
+    <div class="m-hd"><h3>Report a stock issue</h3><button class="m-x" onclick="closeM('mReportIssue')"><i class="fas fa-times"></i></button></div>
+    <div class="m-body">
+      <div class="xs muted mb12">Only describe devices currently in your own hands. This goes straight to Recovery and to the CEO.</div>
+      <div class="login-err" id="issueErr"><i class="fas fa-circle-exclamation"></i><span id="issueErrText"></span></div>
+      <div class="fg"><label class="lbl">Select device</label><select class="inp" id="issueDeviceSelect"><option value="">Loading your stock...</option></select></div>
+      <div class="fg"><label class="lbl">Describe the issue</label><textarea class="inp" rows="3" id="issueDescription" placeholder="e.g. Screen cracked on delivery, device won't power on, missing accessories..."></textarea></div>
+      <div class="fg"><label class="lbl">Photos as evidence (one or more)</label><input class="inp" type="file" accept="image/*" multiple id="issuePhotos"></div>
+    </div>
+    <div class="m-foot"><button class="btn btn-o" onclick="closeM('mReportIssue')">Cancel</button><button class="btn btn-g" id="issueSubmitBtn" onclick="doReportIssue()">Submit report</button></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<button class="fab" onclick="window.scrollTo({top:0,behavior:'smooth'})"><i class="fas fa-arrow-up"></i></button>
+<script src="app.js"></script>
+
+</body>
+</html>
