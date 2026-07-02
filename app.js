@@ -1,0 +1,4045 @@
+// ======================================================
+// FIREBASE — real-time sync across every device
+// ======================================================
+const firebaseConfig={
+  apiKey:"AIzaSyD3vlzCrAMJ6F2j1IPn9TRW8CiOJso0iGc",
+  authDomain:"monalisa-stock-erp.firebaseapp.com",
+  databaseURL:"https://monalisa-stock-erp-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId:"monalisa-stock-erp",
+  storageBucket:"monalisa-stock-erp.firebasestorage.app",
+  messagingSenderId:"982784559239",
+  appId:"1:982784559239:web:9710d243dc24b39f211022"
+};
+let fbApp=null, fbDb=null, fbReady=false;
+let fbDevices=null, fbAllocations=null, fbCustomers=null, fbAuditLog=null, fbReceipts=null;
+let receiptsList=[];
+let currentReceiptId=null;
+
+function setSyncStatus(state){
+  const icon=document.getElementById('syncIcon');
+  const txt=document.getElementById('syncStatus');
+  const pill=document.getElementById('syncPill');
+  if(!icon||!txt||!pill)return;
+  if(state==='connecting'){
+    icon.className='fas fa-cloud-arrow-up';txt.textContent='Connecting...';
+    pill.style.background='rgba(245,166,35,.08)';pill.style.borderColor='rgba(245,166,35,.18)';pill.style.color='var(--amber)';
+  }else if(state==='online'){
+    icon.className='fas fa-cloud';txt.textContent='Synced live';
+    pill.style.background='rgba(0,200,150,.08)';pill.style.borderColor='rgba(0,200,150,.18)';pill.style.color='var(--green)';
+  }else if(state==='offline'){
+    icon.className='fas fa-cloud-slash';txt.textContent='Offline — local only';
+    pill.style.background='rgba(232,69,69,.08)';pill.style.borderColor='rgba(232,69,69,.18)';pill.style.color='var(--red)';
+  }
+}
+
+function initFirebase(){
+  try{
+    setSyncStatus('connecting');
+    fbApp=firebase.initializeApp(firebaseConfig);
+    fbDb=firebase.database();
+    fbAuth=firebase.auth();
+
+    // connection state
+    fbDb.ref('.info/connected').on('value',snap=>{
+      fbReady=!!snap.val();
+      setSyncStatus(fbReady?'online':'offline');
+    });
+
+    setTimeout(()=>{if(!fbReady)setSyncStatus('offline')},4000);
+  }catch(e){
+    console.error('Firebase init failed',e);
+    setSyncStatus('offline');
+  }
+}
+
+// ======================================================
+// COMPANY-SCOPED DATA CONNECTIONS
+// ======================================================
+// IMPORTANT: devices, customers, allocations, and the audit log all
+// live under their own company's path in the database — e.g.
+// devices/{companyId}/{imei} — to match the security rules exactly,
+// which require this exact nesting for read/write access. This
+// function connects all four AFTER login, once we actually know which
+// company the signed-in person belongs to. Calling this is what
+// makes every later read/write actually reach the database instead of
+// being silently rejected by rules that expect this shape.
+function connectCompanyData(){
+  if(!fbDb||!currentUser||!currentUser.companyId){
+    console.warn('connectCompanyData called without a companyId — skipping data connections');
+    return;
+  }
+  const cid=currentUser.companyId;
+  fbDevices=fbDb.ref('devices/'+cid);
+  fbCustomers=fbDb.ref('customers/'+cid);
+  fbAllocations=fbDb.ref('allocations/'+cid);
+  fbAuditLog=fbDb.ref('auditLog/'+cid);
+  fbReceipts=fbDb.ref('receipts/'+cid);
+  connectCompanyProfile();
+  connectReceipts();
+  connectPeerAllocations();
+
+  // seed data only if this company's own database section is empty —
+  // every company starts genuinely empty, no shared demo data
+  fbDevices.once('value').then(snap=>{
+    if(!snap.exists()){
+      fbDevices.set({});
+      devices.length=0;
+    }
+  });
+  fbCustomers.once('value').then(snap=>{
+    if(!snap.exists()){
+      fbCustomers.set({});
+      customers.length=0;
+    }
+  });
+
+  fbDevices.on('value',snap=>{
+    const val=snap.val();
+    devices.length=0;
+    if(val)Object.values(val).forEach(d=>devices.push(d));
+    if(document.getElementById('pg-inventory')?.classList.contains('on')){filterInv()}
+    if(document.getElementById('pg-allocation')?.classList.contains('on')){renderPendingAllocations();renderRecentMovements();}
+    if(document.getElementById('pg-dashboard')?.classList.contains('on')){renderDashboard()}
+    if(document.getElementById('pg-recovery')?.classList.contains('on')){renderRecoveryQueue()}
+    if(document.getElementById('pg-mystock')?.classList.contains('on')){renderMyStockPage()}
+  });
+  fbCustomers.on('value',snap=>{
+    const val=snap.val();
+    customers.length=0;
+    if(val)Object.keys(val).forEach(key=>customers.push({...val[key],_key:key}));
+    if(document.getElementById('pg-customers')?.classList.contains('on')){filterCustomers();renderCustomerApprovals();}
+  });
+  fbAllocations.on('value',snap=>{
+    const val=snap.val()||{};
+    allAllocations=Object.keys(val).map(key=>({id:key,...val[key]}));
+    if(currentUser){
+      renderPendingAllocations();
+      renderRecentMovements();
+    }
+  });
+}
+
+function fbLogAction(action,details){
+  if(!fbAuditLog||!fbReady)return;
+  fbAuditLog.push({
+    time:new Date().toLocaleTimeString(),
+    date:new Date().toLocaleDateString(),
+    user:currentUser?currentUser.name:'Unknown',
+    role:currentUser?currentUser.role:'-',
+    action,details,
+    ts:Date.now()
+  });
+}
+
+function fbUpdateDevice(imei,changes){
+  if(fbDevices&&fbReady){
+    fbDevices.child(imei).update(changes);
+  }else{
+    const d=devices.find(x=>x.imei===imei);
+    if(d)Object.assign(d,changes);
+  }
+}
+function fbAddDevice(device){
+  device.companyId=currentUser?currentUser.companyId:null;
+  if(fbDevices&&fbReady){
+    fbDevices.child(device.imei).set(device);
+  }else{
+    devices.push(device);
+
+  }
+}
+// ======================================================
+// COMPANY SETTINGS — commission rates, brands, contact info
+// ======================================================
+let companySettings={};
+let companyBrands={};
+// companyProfile holds this specific tenant's registered business
+// identity (name, address, contact) — loaded live so every receipt
+// this company generates is branded with THEIR details, not any
+// other company's, and not a hardcoded placeholder.
+let companyProfile={};
+function connectCompanyProfile(){
+  if(!fbDb||!currentUser||!currentUser.companyId)return;
+  fbDb.ref('companies/'+currentUser.companyId+'/profile').on('value',snap=>{
+    companyProfile=snap.val()||{};
+    if(document.getElementById('pg-sales')?.classList.contains('on'))applyReceiptBranding();
+  });
+}
+// Applies this company's own name/address/contact to whatever receipt
+// is currently on screen — called after every login and every time a
+// receipt is (re)loaded, so receipts can never show another company's
+// branding.
+function applyReceiptBranding(){
+  const nameEl=document.getElementById('r-companyName');
+  const addrEl=document.getElementById('r-companyAddr');
+  const stampEl=document.getElementById('r-stamp');
+  const name=(companyProfile.businessName||'Your Company');
+  const addrParts=[companyProfile.businessAddress,companyProfile.district].filter(x=>x&&x!=='—');
+  const addr=addrParts.length?addrParts.join(', '):(companyProfile.businessAddress||'—');
+  const phone=companyProfile.businessPhone||'—';
+  const email=companyProfile.businessEmail||'—';
+  if(nameEl)nameEl.textContent=name.toUpperCase();
+  if(addrEl)addrEl.innerHTML=addr+'<br>'+phone+' | '+email;
+  if(stampEl){
+    const words=name.split(' ').filter(Boolean).slice(0,3);
+    stampEl.innerHTML=words.join('<br>')||'RECEIPT';
+  }
+}
+
+// ======================================================
+// WAREHOUSES — region-scoped for Regional Managers
+// ======================================================
+let companyWarehouses={};
+
+function loadWarehousesPage(){
+  if(!currentUser||!currentUser.companyId)return;
+  const isShop=currentUser.businessModel==='shop';
+  document.getElementById('warehousePageTitle').textContent=isShop?'Your Shops':'Warehouses and Branches';
+  document.getElementById('addWarehouseBtnText').textContent=isShop?'Add shop':'Add warehouse';
+
+  const canAdd=['ceo','admin'].includes(currentUser.role);
+  document.getElementById('addWarehouseBtn').style.display=canAdd?'inline-flex':'none';
+
+  const scopeBanner=document.getElementById('warehouseScopeBanner');
+  const scopeText=document.getElementById('warehouseScopeText');
+  if(!isShop&&currentUser.role==='regionalmanager'){
+    scopeBanner.style.display='flex';
+    scopeText.textContent='You only see warehouses in your assigned region: '+(currentUser.assignedRegion||'not yet set — contact your CEO');
+  }else{
+    scopeBanner.style.display='none';
+  }
+
+  if(isShop){
+    loadShopsIntoMemory().then(renderShopsForShopModel);
+  }else{
+    fbDb.ref('companies/'+currentUser.companyId+'/warehouses').once('value').then(snap=>{
+      companyWarehouses=snap.val()||{};
+      renderWarehouses();
+    });
+    populateWarehouseManagerSelect();
+  }
+}
+
+function openWarehouseOrShopModal(){
+  if(currentUser.businessModel==='shop'){
+    openM('mAddShop');
+  }else{
+    openM('mAddWarehouse');
+  }
+}
+
+function renderShopsForShopModel(){
+  const wrap=document.getElementById('warehousesList');
+  if(!wrap)return;
+  const keys=Object.keys(companyShops);
+  if(!keys.length){
+    wrap.innerHTML='<div class="card"><div class="xs muted" style="text-align:center;padding:16px 0">No shops added yet.</div></div>';
+    return;
+  }
+  wrap.innerHTML=keys.map(k=>{
+    const s=companyShops[k];
+    const managerName=usersList.find(u=>u.uid===s.managerUid)?.name||'No manager assigned';
+    const staffCount=usersList.filter(u=>u.shopKey===k&&u.role==='shopstaff').length;
+    const unitsHeld=devices.filter(d=>{
+      const holder=usersList.find(u=>u.uid===d.holderUid);
+      return holder&&holder.shopKey===k&&d.status!=='sold';
+    }).length;
+    return `<div class="card">
+      <div class="between mb10"><span class="bold">${s.name}</span><span class="badge b-g">Active</span></div>
+      <div class="xs muted mb4">${s.location||'—'}</div><div class="xs muted mb16">Manager: ${managerName} · ${staffCount} staff</div>
+      <div class="g2" style="gap:8px">
+        <div style="background:var(--card2);padding:10px;border-radius:8px;text-align:center"><div class="bold green lg">${unitsHeld}</div><div class="xs muted">Units</div></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+
+function renderWarehouses(){
+  const wrap=document.getElementById('warehousesList');
+  if(!wrap)return;
+  let keys=Object.keys(companyWarehouses);
+  if(currentUser.role==='regionalmanager'){
+    keys=keys.filter(k=>companyWarehouses[k].region===currentUser.assignedRegion);
+  }
+  if(!keys.length){
+    wrap.innerHTML='<div class="card"><div class="xs muted" style="text-align:center;padding:16px 0">No warehouses added yet.</div></div>';
+    return;
+  }
+  wrap.innerHTML=keys.map(k=>{
+    const w=companyWarehouses[k];
+    const managerName=usersList.find(u=>u.uid===w.managerUid)?.name||'Unassigned';
+    const unitsHeld=devices.filter(d=>d.warehouseKey===k&&d.status!=='sold').length;
+    return `<div class="card">
+      <div class="between mb10"><span class="bold">${w.name}</span><span class="badge b-g">${w.region||'—'}</span></div>
+      <div class="xs muted mb4">${w.location||'—'}</div><div class="xs muted mb16">Manager: ${managerName}</div>
+      <div class="g2" style="gap:8px">
+        <div style="background:var(--card2);padding:10px;border-radius:8px;text-align:center"><div class="bold green lg">${unitsHeld}</div><div class="xs muted">Units</div></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function populateWarehouseManagerSelect(){
+  const sel=document.getElementById('whManagerUid');
+  if(!sel)return;
+  const managers=getVisibleUsers().filter(u=>u.role==='manager');
+  sel.innerHTML='<option value="">No manager assigned</option>'+managers.map(m=>`<option value="${m.uid}">${m.name}${m.teamName?' — '+m.teamName:''}</option>`).join('');
+}
+
+function doAddWarehouse(){
+  const name=document.getElementById('whName').value.trim();
+  const location=document.getElementById('whLocation').value.trim();
+  const region=document.getElementById('whRegion').value;
+  const managerUid=document.getElementById('whManagerUid').value||null;
+  if(!name||!region){
+    toast('Please enter a name and select a region','var(--red)');
+    return;
+  }
+  const key='wh_'+Date.now();
+  fbDb.ref('companies/'+currentUser.companyId+'/warehouses/'+key).set({
+    name,location:location||'—',region,managerUid,createdAt:Date.now(),createdBy:currentUser.uid
+  }).then(()=>{
+    companyWarehouses[key]={name,location,region,managerUid};
+    renderWarehouses();
+    closeM('mAddWarehouse');
+    toast('Warehouse added');
+    fbLogAction('WAREHOUSE_ADDED',currentUser.name+' added warehouse '+name+' ('+region+')');
+  }).catch(()=>toast('Could not save — check your permissions','var(--red)'));
+}
+
+function loadCompanySettingsPage(){
+  if(!currentUser||!currentUser.companyId)return;
+  const canEdit=currentUser.role==='ceo'||currentUser.role==='admin';
+  document.getElementById('settingsPermBanner').style.display=canEdit?'none':'flex';
+  ['saveRolesBtn','addBrandBtn','saveContactBtn','saveAgeFieldBtn','saveAgeShopBtn'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el)el.style.display=canEdit?'inline-flex':'none';
+  });
+
+  loadAgingPolicy().then(()=>{
+    document.getElementById('ageGoodField').value=agingPolicy.field.good;
+    document.getElementById('ageWarnField').value=agingPolicy.field.warn;
+    document.getElementById('ageGoodShop').value=agingPolicy.shop.good;
+    document.getElementById('ageWarnShop').value=agingPolicy.shop.warn;
+  });
+
+  fbDb.ref('companies/'+currentUser.companyId+'/profile').once('value').then(snap=>{
+    const p=snap.val()||{};
+    document.getElementById('setCompanyName').value=p.businessName||'—';
+    document.getElementById('setCompanyAddress').value=p.businessAddress||'—';
+    document.getElementById('setCompanyEmail').value=p.businessEmail||'—';
+  });
+
+  fbDb.ref('companies/'+currentUser.companyId+'/settings').once('value').then(snap=>{
+    companySettings=snap.val()||{};
+    const rates=companySettings.commissionRates||{};
+    document.getElementById('rateAgent').value=rates.agent??'';
+    document.getElementById('rateShopowner').value=rates.shopowner??'';
+    document.getElementById('rateTeamleaderCum').value=rates.teamleaderCumulative??'';
+    document.getElementById('rateManagerCum').value=rates.managerCumulative??'';
+    const bonus=companySettings.bonusCommission||{enabled:false,agent:0,leader:0};
+    document.getElementById('toggleBonusEnabled').classList.toggle('on',!!bonus.enabled);
+    document.getElementById('bonusAmountFields').style.display=bonus.enabled?'block':'none';
+    document.getElementById('bonusStatusBadge').textContent=bonus.enabled?'Enabled':'Optional — off';
+    document.getElementById('bonusStatusBadge').className=bonus.enabled?'badge b-g':'badge';
+    document.getElementById('bonusAgent').value=bonus.agent||'';
+    document.getElementById('bonusLeader').value=bonus.leader||'';
+    document.getElementById('setWhatsapp').value=companySettings.whatsappNumber||'';
+    document.getElementById('setSupportEmail').value=companySettings.supportEmail||'';
+  });
+
+  fbDb.ref('companies/'+currentUser.companyId+'/brands').once('value').then(snap=>{
+    companyBrands=snap.val()||{};
+    renderCompanyBrands();
+  });
+}
+
+function toggleBonusEnabled(el){
+  el.classList.toggle('on');
+  document.getElementById('bonusAmountFields').style.display=el.classList.contains('on')?'block':'none';
+}
+
+function saveCommissionRates(){
+  if(!currentUser.companyId)return;
+  const rates={
+    agent:parseInt(document.getElementById('rateAgent').value)||0,
+    shopowner:parseInt(document.getElementById('rateShopowner').value)||0,
+    teamleaderCumulative:parseInt(document.getElementById('rateTeamleaderCum').value)||0,
+    managerCumulative:parseInt(document.getElementById('rateManagerCum').value)||0
+  };
+  const bonus={
+    enabled:document.getElementById('toggleBonusEnabled').classList.contains('on'),
+    agent:parseInt(document.getElementById('bonusAgent').value)||0,
+    leader:parseInt(document.getElementById('bonusLeader').value)||0
+  };
+  Promise.all([
+    fbDb.ref('companies/'+currentUser.companyId+'/settings/commissionRates').set(rates),
+    fbDb.ref('companies/'+currentUser.companyId+'/settings/bonusCommission').set(bonus)
+  ]).then(()=>{
+    companySettings.commissionRates=rates;
+    companySettings.bonusCommission=bonus;
+    toast('Commission settings saved');
+    fbLogAction('SETTINGS_UPDATED',currentUser.name+' updated commission settings');
+  }).catch(()=>toast('Could not save — check your permissions','var(--red)'));
+}
+
+function saveCompanyContact(){
+  if(!currentUser.companyId)return;
+  const whatsapp=document.getElementById('setWhatsapp').value.trim();
+  const email=document.getElementById('setSupportEmail').value.trim();
+  if(!whatsapp||!email){
+    toast('Please fill in both a WhatsApp number and an email','var(--red)');
+    return;
+  }
+  fbDb.ref('companies/'+currentUser.companyId+'/settings').update({
+    whatsappNumber:whatsapp,supportEmail:email
+  }).then(()=>{
+    toast('Support contact saved. Your team will now see these instead of placeholder details.');
+    fbLogAction('SETTINGS_UPDATED',currentUser.name+' updated company support contact');
+  }).catch(()=>toast('Could not save — check your permissions','var(--red)'));
+}
+
+function renderCompanyBrands(){
+  const wrap=document.getElementById('companyBrandsList');
+  const commWrap=document.getElementById('brandCommissionList');
+  const names=Object.keys(companyBrands);
+  if(!names.length){
+    wrap.innerHTML='<div class="xs muted">No brands added yet.</div>';
+    commWrap.innerHTML='<div class="xs muted">Add a brand first under "Brands you sell" below.</div>';
+    return;
+  }
+  const canEdit=currentUser.role==='ceo'||currentUser.role==='admin';
+  wrap.innerHTML=names.map(key=>`<span class="chip" style="font-size:12px;padding:5px 10px">${companyBrands[key].name}${canEdit?` <i class="fas fa-times" style="cursor:pointer;margin-left:5px;color:var(--red)" onclick="removeCompanyBrand('${key}')"></i>`:''}</span>`).join('');
+  commWrap.innerHTML=names.map(key=>{
+    const b=companyBrands[key];
+    return `<div class="row" style="justify-content:space-between">
+      <span class="sm bold" style="min-width:100px">${b.name}</span>
+      <input class="inp" type="number" step="0.1" placeholder="Use role % above" style="max-width:160px" value="${b.fixedCommission??''}" onchange="setBrandCommission('${key}',this.value)" ${canEdit?'':'disabled'}>
+      <span class="xs muted">UGX or % — your call</span>
+    </div>`;
+  }).join('');
+}
+
+function addCompanyBrand(){
+  if(!currentUser.companyId)return;
+  const name=document.getElementById('newBrandName').value.trim();
+  if(!name){toast('Type a brand name first','var(--red)');return}
+  const key='b_'+Date.now();
+  fbDb.ref('companies/'+currentUser.companyId+'/brands/'+key).set({name,addedAt:Date.now()}).then(()=>{
+    companyBrands[key]={name,addedAt:Date.now()};
+    document.getElementById('newBrandName').value='';
+    renderCompanyBrands();
+    toast(name+' added to your brand list');
+    fbLogAction('BRAND_ADDED',currentUser.name+' added brand '+name);
+  }).catch(()=>toast('Could not save — check your permissions','var(--red)'));
+}
+function removeCompanyBrand(key){
+  if(!currentUser.companyId)return;
+  if(!confirm('Remove this brand from your list?'))return;
+  fbDb.ref('companies/'+currentUser.companyId+'/brands/'+key).remove().then(()=>{
+    delete companyBrands[key];
+    renderCompanyBrands();
+    toast('Brand removed');
+  });
+}
+function setBrandCommission(key,value){
+  if(!currentUser.companyId)return;
+  fbDb.ref('companies/'+currentUser.companyId+'/brands/'+key+'/fixedCommission').set(value===''?null:parseFloat(value));
+}
+
+function fbAddCustomer(customer){
+  if(fbCustomers&&fbReady){
+    fbCustomers.push(customer);
+  }else{
+    customers.push(customer);
+  }
+}
+
+// ======================================================
+// USER DIRECTORY — defines the real hierarchy
+// ======================================================
+// ======================================================
+// ROLE PERMISSIONS — the rules stay the same, but WHO has
+// which role now comes from the database (set by the CEO),
+// not from a hardcoded list in this file.
+// ======================================================
+const perms={
+  superadmin:{canCreateUsers:false,canDeleteUsers:false,allocateTo:[],canAddStock:false,addStockNote:'The Super Administrator oversees companies on the platform and does not manage any single company\'s stock.',seeAll:true},
+  ceo:{canCreateUsers:true,canDeleteUsers:true,allocateTo:['manager','teamleader','shopowner','shopmanager','shopstaff'],canAddStock:true,addStockNote:'You can add new stock straight into CEO master inventory.',seeAll:true},
+  admin:{canCreateUsers:false,canDeleteUsers:false,allocateTo:['manager','teamleader','shopowner','shopmanager','shopstaff'],canAddStock:true,addStockNote:'As an Administrator, new stock you add goes into CEO master inventory for the CEO to allocate, or you can allocate it directly to your team.',seeAll:true},
+  regionalmanager:{canCreateUsers:true,canDeleteUsers:false,allocateTo:[],canAddStock:false,addStockNote:'Regional Managers oversee and train Managers in their region. Stock allocation still flows through the CEO or Administrators directly to Managers.',seeAll:false},
+  manager:{canCreateUsers:false,canDeleteUsers:false,allocateTo:['agent'],canAddStock:false,addStockNote:'Managers cannot add brand-new stock. You can only allocate stock you have already received from the CEO or an Administrator, and only down to your own Agents.',seeAll:false},
+  teamleader:{canCreateUsers:false,canDeleteUsers:false,allocateTo:['agent'],canAddStock:false,addStockNote:'Team Leaders cannot add brand-new stock. You can only allocate stock you have already received, and only down to Agents under you.',seeAll:false},
+  agent:{canCreateUsers:false,canDeleteUsers:false,allocateTo:[],canAddStock:false,addStockNote:'Agents receive stock from a Manager or Team Leader. You cannot add new stock or allocate it onward — you can only sell it or return it.',seeAll:false},
+  shopowner:{canCreateUsers:false,canDeleteUsers:false,allocateTo:[],canAddStock:false,addStockNote:'Shop Owners receive stock from the CEO or an Administrator. You cannot add new stock or allocate it onward — you can only sell it.',seeAll:false},
+  shopmanager:{canCreateUsers:false,canDeleteUsers:false,allocateTo:['shopstaff'],canAddStock:false,addStockNote:'Shop Managers cannot add brand-new stock. You can only allocate stock you have already received, and only down to staff in your own shop.',seeAll:false},
+  shopstaff:{canCreateUsers:false,canDeleteUsers:false,allocateTo:[],canAddStock:false,addStockNote:'Shop Staff receive stock from the CEO, an Administrator, or your Shop Manager. You cannot add new stock or allocate it onward — you can only sell it.',seeAll:false},
+  recovery:{canCreateUsers:false,canDeleteUsers:false,allocateTo:[],canAddStock:false,addStockNote:'Recovery Officers work assigned cases and do not add or allocate stock.',seeAll:false},
+};
+const roleLabels={superadmin:'Super Administrator',ceo:'Chief Executive Officer',admin:'Administrator',regionalmanager:'Regional Manager',manager:'Manager',teamleader:'Team Leader',agent:'Agent',shopowner:'Shop Owner',shopmanager:'Shop Manager',shopstaff:'Shop Staff',recovery:'Recovery Officer'};
+const roleAvaClass={superadmin:'ava-g',ceo:'ava-g',admin:'ava-p',regionalmanager:'ava-p',manager:'ava-b',teamleader:'ava-b',agent:'ava-e',shopowner:'ava-e',shopmanager:'ava-b',shopstaff:'ava-e',recovery:'ava-r'};
+const roleIcon={superadmin:'fa-star',ceo:'fa-crown',admin:'fa-user-shield',regionalmanager:'fa-map-location-dot',manager:'fa-briefcase',teamleader:'fa-people-arrows',agent:'fa-user',shopowner:'fa-store',shopmanager:'fa-store',shopstaff:'fa-user',recovery:'fa-shield-alt'};
+const roleIconColor={superadmin:'var(--amber)',ceo:'var(--amber)',admin:'var(--violet)',regionalmanager:'var(--violet)',manager:'var(--blue)',teamleader:'var(--blue)',agent:'var(--green)',shopowner:'var(--green)',shopmanager:'var(--blue)',shopstaff:'var(--green)',recovery:'var(--red)'};
+
+let currentUser=null;       // {uid, name, email, role, title, reportsTo}
+let fbAuth=null;
+let sessionStart=null;
+let inactivityTimer=null;
+let sessionTickInterval=null;
+
+function initials(name){
+  const parts=name.trim().split(' ').filter(Boolean);
+  if(parts.length===0)return '?';
+  if(parts.length===1)return parts[0].slice(0,2).toUpperCase();
+  return (parts[0][0]+parts[1][0]).toUpperCase();
+}
+
+// ======================================================
+// FIRST-TIME SETUP — creates the very first account (CEO)
+// ======================================================
+function checkFirstRun(){
+  if(!fbDb){
+    // Firebase never initialized (CDN blocked, offline, etc.) — go straight
+    // to the login screen rather than waiting on a connection that will
+    // never come.
+    document.getElementById('loginScreen').classList.add('on');
+    return;
+  }
+  // IMPORTANT: this checks a separate, publicly-readable "systemStatus"
+  // flag rather than reading the protected "users" node directly. The
+  // users node requires auth != null under the real security rules, and
+  // before anyone has ever signed in, auth is always null — so checking
+  // "is the database empty" against users itself would always be denied.
+  // systemStatus/initialized is set to true once CEO setup completes,
+  // and is safe to leave publicly readable since it reveals nothing
+  // except "has this app been set up yet", not any real data.
+  const dbCheck=fbDb.ref('systemStatus/initialized').once('value');
+  const timeout=new Promise((_,reject)=>setTimeout(()=>reject(new Error('timeout')),6000));
+  Promise.race([dbCheck,timeout]).then(snap=>{
+    if(snap.val()!==true){
+      document.getElementById('loginScreen').classList.remove('on');
+      document.getElementById('setupScreen').style.display='flex';
+    }else{
+      document.getElementById('loginScreen').classList.add('on');
+    }
+  }).catch(()=>{
+    // Covers both a real Firebase error (e.g. rules not published yet)
+    // and a slow/flaky connection that didn't respond in time — either
+    // way, show the login screen rather than leaving the screen blank.
+    document.getElementById('loginScreen').classList.add('on');
+  });
+}
+
+function completeFirstTimeSetup(){
+  const name=document.getElementById('setupName').value.trim();
+  const email=document.getElementById('setupEmail').value.trim();
+  const pass=document.getElementById('setupPass').value;
+  const err=document.getElementById('setupErr');
+  err.classList.remove('show');
+
+  if(!name||!email||!pass){
+    document.getElementById('setupErrText').textContent='Please fill in your name, email and a password.';
+    err.classList.add('show');
+    return;
+  }
+  if(pass.length<6){
+    document.getElementById('setupErrText').textContent='Password must be at least 6 characters.';
+    err.classList.add('show');
+    return;
+  }
+
+  fbAuth.createUserWithEmailAndPassword(email,pass).then(cred=>{
+    const uid=cred.user.uid;
+    return fbDb.ref('users/'+uid).set({
+      name,email,role:'superadmin',title:'Super Administrator',reportsTo:null,companyId:null,
+      joined:new Date().toLocaleDateString(),status:'Active',createdAt:Date.now()
+    });
+  }).then(()=>{
+    // Mark the system as initialized so future visits show the login
+    // screen instead of this setup screen. This is the one write to
+    // systemStatus that's allowed before anyone has signed in — see
+    // the matching security rule, which only permits setting this
+    // once, when it doesn't already exist.
+    return fbDb.ref('systemStatus/initialized').set(true);
+  }).then(()=>{
+    document.getElementById('setupScreen').style.display='none';
+    toast('Super Admin account created. Welcome to Monalisa Stock ERP.');
+  }).catch(e=>{
+    document.getElementById('setupErrText').textContent=friendlyAuthError(e);
+    err.classList.add('show');
+  });
+}
+
+let selectedBusinessModel=null;
+function selectBusinessModel(model){
+  selectedBusinessModel=model;
+  document.getElementById('modelCardShop').style.borderColor=model==='shop'?'var(--green)':'var(--border2)';
+  document.getElementById('modelCardShop').style.background=model==='shop'?'rgba(0,200,150,.06)':'';
+  document.getElementById('modelCardDistribution').style.borderColor=model==='distribution'?'var(--blue)':'var(--border2)';
+  document.getElementById('modelCardDistribution').style.background=model==='distribution'?'rgba(76,110,245,.06)':'';
+}
+
+function completeCompanyRegistration(){
+  const f=id=>document.getElementById(id).value.trim();
+  const bizName=f('regBizName'),bizNumber=f('regBizNumber'),bizEmail=f('regBizEmail'),bizPhone=f('regBizPhone'),
+        bizAddress=f('regBizAddress'),country=f('regCountry'),region=f('regRegion'),district=f('regDistrict'),
+        subCounty=f('regSubCounty'),parish=f('regParish'),village=f('regVillage'),
+        ceoName=f('regCeoName'),ceoPhone=f('regCeoPhone');
+  const err=document.getElementById('regErr');
+  err.classList.remove('show');
+
+  if(!selectedBusinessModel){
+    document.getElementById('regErrText').textContent='Please choose whether this is a Shop business or a Distribution business first.';
+    err.classList.add('show');
+    return;
+  }
+  if(!bizName||!bizEmail||!bizPhone||!ceoName||!ceoPhone||!district){
+    document.getElementById('regErrText').textContent='Please fill in at least the business name, business email and phone, your name and phone, and your district.';
+    err.classList.add('show');
+    return;
+  }
+
+  // companyId is generated from the CEO's own uid, since each CEO
+  // registers exactly one company and this keeps the id stable and
+  // collision-free without needing a separate id-generation scheme.
+  const companyId='co_'+currentUser.uid;
+
+  const companyProfile={
+    businessModel:selectedBusinessModel,
+    businessName:bizName,businessNumber:bizNumber||'—',businessEmail:bizEmail,businessPhone:bizPhone,
+    businessAddress:bizAddress||'—',country:country||'Uganda',region:region||'—',district,
+    subCounty:subCounty||'—',parish:parish||'—',village:village||'—',
+    ceoName:ceoName,ceoPhone:ceoPhone,registeredAt:Date.now()
+  };
+
+  fbDb.ref('companies/'+companyId+'/profile').set(companyProfile).then(()=>{
+    // subscription defaults to pending — only the Super Admin can mark
+    // it active, per the security rules. The "simulate payment" button
+    // on the lock screen is a demo-only bypass of that, for testing.
+    return fbDb.ref('companies/'+companyId+'/subscription').set({status:'pending',plan:'standard-monthly',registeredAt:Date.now()});
+  }).then(()=>{
+    // company-specific contact details, defaulting to Monalisa Tech
+    // Solutions' own number/email until the CEO changes them under
+    // Integrations — this is what makes "kabuusumonalisa@gmail.com and
+    // +256703953711 aren't used again" actually achievable per company.
+    return fbDb.ref('companies/'+companyId+'/settings').set({
+      whatsappNumber:ceoPhone,supportEmail:bizEmail,
+      commissionRates:selectedBusinessModel==='shop'?{shopstaff:3,shopmanager:0.8}:{agent:3,teamleader:1.5,manager:0.8}
+    });
+  }).then(()=>{
+    return fbDb.ref('users/'+currentUser.uid+'/companyId').set(companyId);
+  }).then(()=>{
+    return fbDb.ref('users/'+currentUser.uid+'/businessModel').set(selectedBusinessModel);
+  }).then(()=>{
+    currentUser.companyId=companyId;
+    currentUser.businessModel=selectedBusinessModel;
+    document.getElementById('companyRegScreen').style.display='none';
+    toast('Company registered. One more step — activating your subscription.');
+    checkSubscriptionThenBoot();
+
+  }).catch(e=>{
+    document.getElementById('regErrText').textContent=friendlyAuthError(e)||'Could not save your company details. Please try again.';
+    err.classList.add('show');
+  });
+}
+
+// ======================================================
+// LOGIN SCREEN
+// ======================================================
+function togglePw(){
+  const f=document.getElementById('loginPass');
+  const i=document.getElementById('pwIcon');
+  if(f.type==='password'){f.type='text';i.className='fas fa-eye-slash'}
+  else{f.type='password';i.className='fas fa-eye'}
+}
+
+function friendlyAuthError(e){
+  const code=e&&e.code?e.code:'';
+  if(code.includes('wrong-password')||code.includes('invalid-credential'))return 'Incorrect email or password.';
+  if(code.includes('user-not-found'))return 'No account found with that email.';
+  if(code.includes('invalid-email'))return 'That doesn\'t look like a valid email address.';
+  if(code.includes('too-many-requests'))return 'Too many attempts. Please wait a few minutes and try again.';
+  if(code.includes('network-request-failed'))return 'Could not reach the server. Check your internet connection.';
+  if(code.includes('email-already-in-use'))return 'That email is already registered.';
+  if(code.includes('weak-password'))return 'Please choose a stronger password (at least 6 characters).';
+  return e&&e.message?e.message:'Something went wrong. Please try again.';
+}
+
+function attemptLogin(){
+  const email=document.getElementById('loginEmail').value.trim();
+  const pass=document.getElementById('loginPass').value.trim();
+  const err=document.getElementById('loginErr');
+  const btn=document.getElementById('loginBtn');
+  const btnText=document.getElementById('loginBtnText');
+  err.classList.remove('show');
+
+  if(!email||!pass){
+    document.getElementById('loginErrText').textContent='Please enter both your email and password.';
+    err.classList.add('show');
+    return;
+  }
+  if(!fbAuth){
+    document.getElementById('loginErrText').textContent='Could not connect to the server. Check your internet connection and reload the page.';
+    err.classList.add('show');
+    return;
+  }
+
+  btn.disabled=true;
+  btnText.textContent='Checking credentials...';
+
+  fbAuth.signInWithEmailAndPassword(email,pass).then(cred=>{
+    btnText.textContent='Welcome back...';
+    return fbDb.ref('users/'+cred.user.uid).once('value');
+  }).then(snap=>{
+    const profile=snap.val();
+    btn.disabled=false;
+    btnText.textContent='Sign in';
+    if(!profile){
+      document.getElementById('loginErrText').textContent='Your account has no profile on record. Ask the CEO to recreate your login.';
+      err.classList.add('show');
+      fbAuth.signOut();
+      return;
+    }
+    if(profile.status==='Suspended'){
+      document.getElementById('loginErrText').textContent='This account has been suspended. Contact the CEO.';
+      err.classList.add('show');
+      fbAuth.signOut();
+      return;
+    }
+    logUserIn(snap.key,profile);
+  }).catch(e=>{
+    btn.disabled=false;
+    btnText.textContent='Sign in';
+    document.getElementById('loginErrText').textContent=friendlyAuthError(e);
+    err.classList.add('show');
+  });
+}
+
+function sendPasswordReset(){
+  const email=document.getElementById('loginEmail').value.trim();
+  if(!email){
+    toast('Type your email above first, then tap "Forgot password" again','var(--amber)');
+    return;
+  }
+  fbAuth.sendPasswordResetEmail(email).then(()=>{
+    toast('Password reset link sent to '+email);
+  }).catch(e=>{
+    toast(friendlyAuthError(e),'var(--red)');
+  });
+}
+
+function logUserIn(uid,profile){
+  currentUser={
+    uid,
+    name:profile.name,
+    email:profile.email,
+    role:profile.role,
+    title:profile.title||roleLabels[profile.role],
+    reportsTo:profile.reportsTo,
+    companyId:profile.companyId||null,
+    businessModel:profile.businessModel||null, // refreshed from company profile below once companyId is known
+    assignedRegion:profile.assignedRegion||null,
+    shopKey:profile.shopKey||null,
+    ava:initials(profile.name),
+    cls:roleAvaClass[profile.role]||'ava-g',
+    icon:roleIcon[profile.role]||'fa-user',
+    iconColor:roleIconColor[profile.role]||'var(--green)'
+  };
+  sessionStart=Date.now();
+  document.getElementById('loginScreen').classList.remove('on');
+
+  // Super Admin never belongs to a company — straight into the app.
+  if(currentUser.role==='superadmin'){
+    bootApp();
+    return;
+  }
+
+  // A CEO who has never registered their company yet (no companyId set)
+  // gets sent to company registration instead of the normal dashboard.
+  // Every other role is created BY a CEO who already filled this in, so
+  // they should always already have a companyId by the time they exist.
+  if(currentUser.role==='ceo'&&!currentUser.companyId){
+    document.getElementById('companyRegScreen').style.display='flex';
+    return;
+  }
+
+  // Refresh businessModel from the actual company profile, not just
+  // whatever was cached on this person's own user record at the time
+  // they were created — the company profile is the single source of
+  // truth, set once at registration.
+  if(currentUser.companyId){
+    fbDb.ref('companies/'+currentUser.companyId+'/profile/businessModel').once('value').then(snap=>{
+      currentUser.businessModel=snap.val()||'distribution';
+      checkSubscriptionThenBoot();
+    }).catch(()=>{
+      currentUser.businessModel=currentUser.businessModel||'distribution';
+      checkSubscriptionThenBoot();
+    });
+  }else{
+    checkSubscriptionThenBoot();
+  }
+}
+
+function checkSubscriptionThenBoot(){
+  // SUBSCRIPTION ENFORCEMENT IS TEMPORARILY OFF while the system is
+  // still being built and tested. The app boots normally for every
+  // company regardless of payment status, so the rest of the system
+  // can keep being tested without getting blocked here. The original
+  // hard lock screen (showSubscriptionLock) is still in the code below,
+  // unused for now -- turning real enforcement back on later is a one
+  // line change: call showSubscriptionLock(sub) instead of bootApp()
+  // when sub.status !== 'active'.
+  if(!currentUser.companyId){
+    bootApp();
+    return;
+  }
+  fbDb.ref('companies/'+currentUser.companyId+'/subscription').once('value').then(snap=>{
+    const sub=snap.val()||{status:'pending'};
+    currentUser.subscriptionStatus=sub.status;
+    bootApp();
+    if(sub.status!=='active'){
+      showBillingComingSoonBanner();
+    }
+  }).catch(()=>{
+    currentUser.subscriptionStatus='pending';
+    bootApp();
+    showBillingComingSoonBanner();
+  });
+}
+
+function showBillingComingSoonBanner(){
+  // A small, dismissible, non-blocking reminder rather than a wall --
+  // this is what "subscription optional for now" looks like day to day.
+  if(document.getElementById('billingSoonBanner'))return;
+  const banner=document.createElement('div');
+  banner.id='billingSoonBanner';
+  banner.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--border2);padding:10px 16px;display:flex;align-items:center;gap:10px;z-index:600;font-size:12px;flex-wrap:wrap';
+  banner.innerHTML='<i class="fas fa-circle-info" style="color:var(--amber)"></i><span style="flex:1;min-width:200px">Billing is under development \u2014 subscription plans are coming soon after full rollout. Everything is unlocked for now.</span><button onclick="document.getElementById(\'billingSoonBanner\').remove()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:4px"><i class="fas fa-times"></i></button>';
+  document.body.appendChild(banner);
+}
+
+function showSubscriptionLock(sub){
+  fbDb.ref('companies/'+currentUser.companyId+'/profile/businessName').once('value').then(snap=>{
+    document.getElementById('subLockCompanyName').textContent=snap.val()||'Your company';
+  });
+  const statusEl=document.getElementById('subLockStatus');
+  if(sub.status==='suspended'){
+    statusEl.textContent='Suspended';statusEl.className='badge b-r';
+    document.getElementById('subLockTitle').textContent='Subscription suspended';
+    document.getElementById('subLockText').textContent='Your company\'s subscription has been suspended by Monalisa Tech Solutions. Contact support to resolve this.';
+  }else{
+    statusEl.textContent='Pending payment';statusEl.className='badge b-a';
+  }
+  document.getElementById('subscriptionLockScreen').style.display='flex';
+}
+
+function simulatePayment(){
+  // DEMO ONLY: this simulates a successful payment so the front end can
+  // be tested end to end. Real billing isn't connected yet — only the
+  // Super Admin's database write actually controls subscription.status
+  // for real per the security rules. This button calls a path that, in
+  // the real system, only Monalisa Tech Solutions (Super Admin) should
+  // be allowed to set — for the demo it's left open so you can test the
+  // unlocked state without needing a second Super Admin login.
+  if(!currentUser.companyId)return;
+  fbDb.ref('companies/'+currentUser.companyId+'/subscription').update({
+    status:'active',lastPaymentAt:Date.now(),simulatedPayment:true
+  }).then(()=>{
+    document.getElementById('subscriptionLockScreen').style.display='none';
+    toast('Payment simulated — subscription active');
+    bootApp();
+  }).catch(()=>{
+    toast('Could not update subscription. Check security rules allow this for testing.','var(--red)');
+  });
+}
+
+// ======================================================
+// LOCK SCREEN / SESSION TIMEOUT
+// ======================================================
+function resetInactivity(){
+  clearTimeout(inactivityTimer);
+  if(!currentUser)return;
+  inactivityTimer=setTimeout(()=>{
+    document.getElementById('lockScreen').classList.add('on');
+  },5*60*1000); // 5 minutes
+}
+['mousemove','keydown','click','scroll','touchstart'].forEach(evt=>{
+  document.addEventListener(evt,resetInactivity);
+});
+
+function unlockSession(){
+  const p=document.getElementById('unlockPass').value;
+  if(!currentUser){forceLogout();return}
+  fbAuth.signInWithEmailAndPassword(currentUser.email,p).then(()=>{
+    document.getElementById('lockScreen').classList.remove('on');
+    document.getElementById('unlockPass').value='';
+    toast('Welcome back, '+currentUser.name.split(' ')[0]);
+    resetInactivity();
+  }).catch(()=>{
+    toast('Incorrect password','var(--red)');
+  });
+}
+function forceLogout(){
+  document.getElementById('lockScreen').classList.remove('on');
+  doLogout();
+}
+
+function startSessionTimer(){
+  clearInterval(sessionTickInterval);
+  sessionTickInterval=setInterval(()=>{
+    if(!sessionStart)return;
+    const mins=Math.floor((Date.now()-sessionStart)/60000);
+    const el=document.getElementById('sessionTimer');
+    if(el)el.textContent='Active '+mins+'m';
+  },10000);
+}
+
+// ======================================================
+// LOGOUT
+// ======================================================
+function toggleLogoutMenu(){document.getElementById('logoutMenu').classList.toggle('open')}
+function closeLogoutMenu(){document.getElementById('logoutMenu').classList.remove('open')}
+document.addEventListener('click',e=>{
+  if(!e.target.closest('#sbUser')&&!e.target.closest('#logoutMenu'))closeLogoutMenu();
+});
+function doLogout(){
+  closeLogoutMenu();
+  fbAuth.signOut();
+  document.getElementById('app').classList.remove('on');
+  document.getElementById('app').style.display='none';
+  currentUser=null;
+  sessionStart=null;
+  clearInterval(sessionTickInterval);
+  clearTimeout(inactivityTimer);
+  document.getElementById('loginEmail').value='';
+  document.getElementById('loginPass').value='';
+  document.getElementById('loginScreen').classList.add('on');
+}
+
+// ======================================================
+// APPLY PERMISSIONS THROUGHOUT THE UI
+// ======================================================
+function applyPermissions(){
+  const u=currentUser;
+  const p=perms[u.role]||perms.agent;
+
+  document.getElementById('sbName').textContent=u.name;
+  document.getElementById('sbRole').textContent=u.title;
+
+  // hide irrelevant Users-page tabs for roles who can't see those people anyway
+  const ceoOnlyTabs=['tabAdmins','tabManagers','tabShops','tabRecovery'];
+  ceoOnlyTabs.forEach(id=>{
+    const el=document.getElementById(id);
+    if(el)el.style.display=(u.role==='ceo'||u.role==='admin')?'inline-block':'none';
+  });
+
+  // show the right set of role tabs depending on the company's
+  // business model — Shop model never sees Manager/Team Leader/Agent
+  // tabs, and Distribution model never sees Shop Manager/Shop Staff
+  const distTabs=document.getElementById('distributionTabs');
+  const shopTabs=document.getElementById('shopModelTabs');
+  if(distTabs&&shopTabs){
+    const isShop=u.businessModel==='shop';
+    distTabs.style.display=isShop?'none':'inline';
+    shopTabs.style.display=isShop?'inline':'none';
+  }
+  const navWhLabel=document.getElementById('navWarehouseLabel');
+  if(navWhLabel)navWhLabel.textContent=(u.businessModel==='shop')?'Shops':'Warehouses';
+
+  const av=document.getElementById('sbAva');
+  av.textContent=u.ava;av.className='ava '+u.cls;
+  const ri=document.getElementById('roleIco').querySelector('i');
+  ri.className='fas '+u.icon;ri.style.color=u.iconColor;
+
+  // nav visibility: CEO-only sections
+  const ceoOnlyNav=['nav-users','nav-auditlogs','nav-security','nav-integrations','nav-settings'];
+  const ceoAdminNav=['nav-ceo'];
+  ceoOnlyNav.forEach(id=>{
+    const n=document.getElementById(id);
+    if(n)n.style.display=(u.role==='ceo'||u.role==='admin')?'flex':'none';
+  });
+  ceoAdminNav.forEach(id=>{
+    const n=document.getElementById(id);
+    if(n)n.style.display=(u.role==='ceo'||u.role==='admin')?'flex':'none';
+  });
+
+  // Super Admin sits above every company and has no use for any of the
+  // day-to-day operational pages — only Dashboard (their company
+  // overview) makes sense for that role.
+  const operationalNav=['nav-inventory','nav-warehouses','nav-allocation','nav-mystock','nav-sales','nav-customers','nav-financing','nav-recovery','nav-commissions','nav-performance','nav-reports','nav-uganda'];
+  if(u.role==='superadmin'){
+    operationalNav.forEach(id=>{const n=document.getElementById(id);if(n)n.style.display='none'});
+    ceoOnlyNav.forEach(id=>{const n=document.getElementById(id);if(n)n.style.display='none'});
+  }
+
+  // Agents, Shop Staff, Shop Owners, Managers, and Team Leaders are all
+  // individual stock-holders, not people who need to browse company-
+  // wide inventory — they now get their own "Stock" page instead
+  // (current stock, allocation history, allocate-to-another-person).
+  const navInventory=document.getElementById('nav-inventory');
+  if(navInventory)navInventory.style.display=['ceo','admin','regionalmanager','shopmanager'].includes(u.role)?'flex':'none';
+
+  // The company-wide "Stock Allocation" page (CEO/Admin distributing
+  // from master inventory) is not what Agent/Shop Owner/Manager/Team
+  // Leader use any more — they allocate peer-to-peer from their own
+  // Stock page instead.
+  const navAllocation=document.getElementById('nav-allocation');
+  if(navAllocation)navAllocation.style.display=['agent','shopowner','manager','teamleader'].includes(u.role)?'none':'flex';
+
+  // The new unified "Stock" page — current stock, allocation history,
+  // and allocate-to-another-person — for everyone who personally
+  // holds stock day to day.
+  const navMyStock=document.getElementById('nav-mystock');
+  if(navMyStock)navMyStock.style.display=['agent','shopowner','manager','teamleader'].includes(u.role)?'flex':'none';
+
+  // Warehouses and Uganda Analytics are company-wide / region-wide
+  // views — restricted to CEO, Admin, and Regional Manager.
+  const restrictedToTopTier=['nav-warehouses','nav-uganda'];
+  restrictedToTopTier.forEach(id=>{
+    const n=document.getElementById(id);
+    if(n)n.style.display=['ceo','admin','regionalmanager'].includes(u.role)?'flex':'none';
+  });
+
+  // Financing Integration is strictly CEO/Admin only — not even
+  // Regional Manager, Manager, Team Leader, Agent, or Shop Owner see
+  // this, per explicit instruction.
+  const navFinancing=document.getElementById('nav-financing');
+  if(navFinancing)navFinancing.style.display=['ceo','admin'].includes(u.role)?'flex':'none';
+
+  // Reports is a company/team analysis tool. Managers and Team Leaders
+  // should not see it, per instruction.
+  const reportsRestricted=['nav-reports'];
+  reportsRestricted.forEach(id=>{
+    const n=document.getElementById(id);
+    if(n)n.style.display=['ceo','admin','regionalmanager','shopmanager'].includes(u.role)?'flex':'none';
+  });
+
+  // Performance is analytics — Agents, Shop Staff, Shop Owners, and
+  // Team Leaders should not see it, per instruction that individual
+  // contributors and Team Leaders get no analytics access.
+  const performanceRestricted=['nav-performance'];
+  performanceRestricted.forEach(id=>{
+    const n=document.getElementById(id);
+    if(n)n.style.display=['agent','shopstaff','shopowner','teamleader'].includes(u.role)?'none':'flex';
+  });
+
+  // Add Stock button on inventory page
+  const addBtn=document.getElementById('addStockBtn');
+  const invBanner=document.getElementById('invPermBanner');
+  const invText=document.getElementById('invPermText');
+  if(addBtn){
+    addBtn.style.display=p.canAddStock?'inline-flex':'none';
+  }
+  if(invBanner&&invText){
+    if(!p.canAddStock){
+      invBanner.style.display='flex';
+      invText.textContent=p.addStockNote;
+    }else{
+      invBanner.style.display='none';
+    }
+  }
+
+  // Allocation page permission banner + button
+  const allocBanner=document.getElementById('allocPermBanner');
+  const allocText=document.getElementById('allocPermText');
+  const newAllocBtn=document.getElementById('newAllocBtn');
+  if(allocBanner&&allocText){
+    if(p.allocateTo.length===0){
+      allocBanner.style.display='flex';
+      allocText.textContent=p.addStockNote.replace('add new stock','allocate stock')+' You can only confirm receipt and then sell or return your stock.';
+      if(newAllocBtn)newAllocBtn.style.display='none';
+    }else{
+      allocBanner.style.display='none';
+      if(newAllocBtn)newAllocBtn.style.display='inline-flex';
+    }
+  }
+
+  // Users page
+  const createUserBtn=document.getElementById('createUserBtn');
+  const usersBanner=document.getElementById('usersPermBanner');
+  const canCreateAny=(perms[u.role]&&['ceo','admin','manager','teamleader'].includes(u.role));
+  if(createUserBtn){
+    createUserBtn.style.display=canCreateAny?'inline-flex':'none';
+    if(u.role==='admin')createUserBtn.innerHTML='<i class="fas fa-user-plus"></i>Create login';
+    else if(u.role==='manager'||u.role==='teamleader')createUserBtn.innerHTML='<i class="fas fa-user-plus"></i>Add an agent';
+  }
+  if(usersBanner){
+    const bannerText=usersBanner.querySelector('span');
+    if(u.role==='ceo'){
+      usersBanner.style.display='none';
+    }else{
+      usersBanner.style.display='flex';
+      if(bannerText){
+        if(u.role==='admin')bannerText.textContent='You can see and manage everyone except the CEO\'s own record. Only the CEO can create Administrator or Manager logins.';
+        else if(u.role==='manager')bannerText.textContent='You can see and manage your own Team Leaders and Agents only. You cannot see other managers\' teams.';
+        else if(u.role==='teamleader')bannerText.textContent='You can see and manage your own Agents only.';
+        else bannerText.textContent='You can only see your own account here.';
+      }
+    }
+  }
+
+  updateGreeting();
+  buildAllocateOptions();
+}
+
+// ======================================================
+// SCOPED VISIBILITY — who can see/manage whom
+// ======================================================
+// Returns the list of users currentUser is allowed to see, per the rule:
+// - CEO sees everyone, including all Admins
+// - Admin sees everyone EXCEPT the CEO record itself
+// - Manager sees only their own direct reports (by reportsTo == their uid),
+//   plus, transitively, that Team Leader's own Agents
+// - Everyone else sees only themselves
+function resolveReportsTo(uid){
+  if(!uid)return '—';
+  if(currentUser&&uid===currentUser.uid)return 'You';
+  const found=usersList.find(u=>u.uid===uid);
+  return found?found.name:'—';
+}
+
+function getVisibleUsers(){
+  if(!currentUser)return [];
+  if(currentUser.role==='superadmin')return usersList; // oversees every company
+  // every other role is scoped to their OWN company first, no exceptions
+  const sameCompany=usersList.filter(u=>u.companyId===currentUser.companyId);
+  if(currentUser.role==='ceo')return sameCompany;
+  if(currentUser.role==='admin')return sameCompany.filter(u=>u.role!=='ceo');
+  if(currentUser.role==='regionalmanager'){
+    // Managers who report directly to this Regional Manager, plus their
+    // entire downline (Team Leaders, then those Team Leaders' Agents)
+    const directManagers=sameCompany.filter(u=>u.reportsTo===currentUser.uid);
+    const managerUids=new Set(directManagers.map(u=>u.uid));
+    const teamLeaders=sameCompany.filter(u=>managerUids.has(u.reportsTo));
+    const tlUids=new Set(teamLeaders.map(u=>u.uid));
+    const agentsAndShops=sameCompany.filter(u=>tlUids.has(u.reportsTo)||managerUids.has(u.reportsTo));
+    return [...directManagers,...teamLeaders,...agentsAndShops];
+  }
+  if(currentUser.role==='manager'){
+    const direct=sameCompany.filter(u=>u.reportsTo===currentUser.uid);
+    const directUids=new Set(direct.map(u=>u.uid));
+    const indirect=sameCompany.filter(u=>directUids.has(u.reportsTo));
+    return [...direct,...indirect];
+  }
+  if(currentUser.role==='teamleader'){
+    return sameCompany.filter(u=>u.reportsTo===currentUser.uid);
+  }
+  if(currentUser.role==='shopmanager'){
+    return sameCompany.filter(u=>u.reportsTo===currentUser.uid);
+  }
+  // agents, shop owners, shop staff, recovery officers see only themselves
+  return sameCompany.filter(u=>u.uid===currentUser.uid);
+}
+
+// ======================================================
+// TERRITORY SCOPING — devices and customers
+// ======================================================
+// Returns true if currentUser is allowed to see this specific device,
+// based on who currently holds it (by their real Firebase uid).
+// CEO and Admin see everything. Everyone else only sees stock held by
+// themselves or by someone in their own downline (their own team).
+function canSeeDevice(d){
+  if(!currentUser)return false;
+  if(currentUser.role==='ceo'||currentUser.role==='admin')return true;
+  // A device with no holderUid yet (e.g. freshly added, not yet
+  // allocated) is only visible to CEO/Admin above — never to everyone,
+  // since that would leak stock visibility to people it doesn't
+  // belong to. It becomes visible once it's actually allocated to
+  // someone in the viewer's own team.
+  if(!d.holderUid)return false;
+  if(d.holderUid===currentUser.uid)return true;
+  const myTeamUids=new Set(getVisibleUsers().map(u=>u.uid));
+  return myTeamUids.has(d.holderUid);
+}
+function canSeeCustomer(c){
+  if(!currentUser)return false;
+  if(currentUser.role==='ceo'||currentUser.role==='admin')return true;
+  // A customer from a sale made by anyone other than CEO/Admin only
+  // "reflects" once CEO/Admin approves it — until then, nobody but
+  // CEO/Admin can see the record, per instruction.
+  if(c.approvalStatus==='pending')return false;
+  // Same principle as devices: an ownerless customer record is only
+  // ever visible to CEO/Admin, never broadly, to avoid leaking
+  // customer data to people outside the agent who actually sold to them.
+  if(!c.agentUid)return false;
+  if(c.agentUid===currentUser.uid)return true;
+  const myTeamUids=new Set(getVisibleUsers().map(u=>u.uid));
+  return myTeamUids.has(c.agentUid);
+}
+function visibleDevices(){return devices.filter(canSeeDevice)}
+
+// ======================================================
+// STOCK EFFICIENCY ENGINE
+// ======================================================
+// Per-device aging bands shown on device cards/tables stay the
+// existing 9/20-day system, unchanged.
+//
+// Separately, every Agent, Team Leader, Shop Owner, and Manager gets
+// an automatic "stock quotient" — a 0-100% efficiency score based on
+// how much of their CURRENTLY HELD stock is aged, using the new
+// 10/15-day bands you specified:
+//   green  = under 10 days held  -> counts as "fresh", full credit
+//   orange = 10 to 15 days held  -> counts as "moderate", partial credit
+//   red    = over 15 days held   -> counts as "aged", no credit
+// Quotient = 100 when someone holds zero aged stock, and declines as
+// more of what they hold is moderate or aged. This applies the moment
+// stock is allocated to them — there's no separate setup step.
+function newBand(ageDays){
+  if(ageDays<10)return 'green';
+  if(ageDays<=15)return 'orange';
+  return 'red';
+}
+function stockQuotientFor(uid){
+  const held=devices.filter(d=>d.holderUid===uid&&d.status!=='sold'&&!d.hasIssue);
+  if(held.length===0)return {quotient:100,total:0,green:0,orange:0,red:0};
+  let green=0,orange=0,red=0;
+  held.forEach(d=>{
+    const b=newBand(d.age);
+    if(b==='green')green++;else if(b==='orange')orange++;else red++;
+  });
+  // full credit for green, half credit for orange, none for red
+  const score=((green*1)+(orange*0.5)+(red*0))/held.length*100;
+  return {quotient:Math.round(score),total:held.length,green,orange,red};
+}
+// A Manager's own quotient is determined by the COMBINED aged stock of
+// everyone in their downline (their Team Leaders and that TL's Agents),
+// not just stock the Manager personally holds — per your instruction
+// that "aged stock on both team leader and agent affects his
+// efficiency." Team Leaders are scored the same way, across their own
+// Agents.
+function teamStockQuotientFor(uid,role){
+  let teamUids=[];
+  if(role==='manager'){
+    const direct=usersList.filter(u=>u.reportsTo===uid);
+    const directUids=new Set(direct.map(u=>u.uid));
+    const indirect=usersList.filter(u=>directUids.has(u.reportsTo));
+    teamUids=[...direct,...indirect].map(u=>u.uid);
+  }else if(role==='teamleader'){
+    teamUids=usersList.filter(u=>u.reportsTo===uid).map(u=>u.uid);
+  }
+  const held=devices.filter(d=>teamUids.includes(d.holderUid)&&d.status!=='sold'&&!d.hasIssue);
+  if(held.length===0)return {quotient:100,total:0,green:0,orange:0,red:0};
+  let green=0,orange=0,red=0;
+  held.forEach(d=>{
+    const b=newBand(d.age);
+    if(b==='green')green++;else if(b==='orange')orange++;else red++;
+  });
+  const score=((green*1)+(orange*0.5)+(red*0))/held.length*100;
+  return {quotient:Math.round(score),total:held.length,green,orange,red};
+}
+function quotientColor(q){return q>=80?'var(--green)':q>=50?'var(--amber)':'var(--red)'}
+function quotientBadgeClass(q){return q>=80?'b-g':q>=50?'b-a':'b-r'}
+
+function visibleCustomers(){return customers.filter(canSeeCustomer)}
+
+function toggleRoleSpecificFields(role){
+  const teamField=document.getElementById('teamNameField');
+  const regionalFields=document.getElementById('regionalManagerFields');
+  const shopField=document.getElementById('shopAssignField');
+  if(teamField)teamField.style.display=(role==='manager'||role==='teamleader')?'block':'none';
+  if(regionalFields)regionalFields.style.display=(role==='regionalmanager')?'block':'none';
+  if(shopField){
+    shopField.style.display=(role==='shopstaff'||role==='shopmanager')?'block':'none';
+    if(role==='shopstaff'||role==='shopmanager')populateShopSelect();
+  }
+}
+
+// ======================================================
+// SHOPS — for the Shop business model (1 to a few shops)
+// ======================================================
+let companyShops={};
+function loadShopsIntoMemory(){
+  if(!currentUser||!currentUser.companyId)return Promise.resolve();
+  return fbDb.ref('companies/'+currentUser.companyId+'/shops').once('value').then(snap=>{
+    companyShops=snap.val()||{};
+  });
+}
+function populateShopSelect(){
+  const sel=document.getElementById('nuShopKey');
+  if(!sel)return;
+  loadShopsIntoMemory().then(()=>{
+    const keys=Object.keys(companyShops);
+    sel.innerHTML=keys.length
+      ? '<option value="">Select a shop</option>'+keys.map(k=>`<option value="${k}">${companyShops[k].name}</option>`).join('')
+      : '<option value="">No shops yet — add one first</option>';
+  });
+}
+function doAddShop(){
+  const name=document.getElementById('shopName').value.trim();
+  const location=document.getElementById('shopLocation').value.trim();
+  const managerUid=document.getElementById('shopManagerSelect').value||null;
+  if(!name){toast('Please enter a shop name','var(--red)');return}
+  const key='shop_'+Date.now();
+  fbDb.ref('companies/'+currentUser.companyId+'/shops/'+key).set({
+    name,location:location||'—',managerUid,createdAt:Date.now(),createdBy:currentUser.uid
+  }).then(()=>{
+    companyShops[key]={name,location,managerUid};
+    closeM('mAddShop');
+    toast(name+' added');
+    fbLogAction('SHOP_ADDED',currentUser.name+' added shop '+name);
+    populateShopSelect();
+    if(document.getElementById('pg-warehouses')?.classList.contains('on'))renderShopsForShopModel();
+  }).catch(()=>toast('Could not save — check your permissions','var(--red)'));
+}
+function populateShopManagerSelect(){
+  const sel=document.getElementById('shopManagerSelect');
+  if(!sel)return;
+  const managers=getVisibleUsers().filter(u=>u.role==='shopmanager');
+  sel.innerHTML='<option value="">No manager assigned yet</option>'+managers.map(m=>`<option value="${m.uid}">${m.name}</option>`).join('');
+}
+
+function populateReportsTo(){
+  const sel=document.getElementById('nuReportsTo');
+  const roleSel=document.getElementById('nuRole');
+  if(!sel||!roleSel)return;
+
+  const isShopModel=currentUser.businessModel==='shop';
+
+  // restrict which roles THIS user is allowed to create — the Shop
+  // model gets a deliberately flat, simple set of roles, since a
+  // business with one to a few shops has no use for the full field
+  // sales hierarchy (Regional Manager, Manager, Team Leader, Agent)
+  const allowedRolesShop={
+    superadmin:[],
+    ceo:['admin','shopmanager','shopstaff','recovery'],
+    admin:['shopmanager','shopstaff','recovery'],
+    shopmanager:['shopstaff'],
+  };
+  const allowedRolesDistribution={
+    superadmin:[],
+    ceo:['admin','regionalmanager','manager','teamleader','agent','shopowner','recovery'],
+    admin:['manager','teamleader','agent','shopowner','recovery'],
+    regionalmanager:['manager'],
+    manager:['agent'],
+    teamleader:['agent'],
+  };
+  const allowedRoles=isShopModel?allowedRolesShop:allowedRolesDistribution;
+  const allowed=allowedRoles[currentUser.role]||[];
+  const currentRoleVal=roleSel.value;
+  roleSel.innerHTML=allowed.map(r=>`<option value="${r}">${roleLabels[r]}</option>`).join('');
+  if(allowed.includes(currentRoleVal))roleSel.value=currentRoleVal;
+  const roleBeingCreated=roleSel.value;
+  toggleRoleSpecificFields(roleBeingCreated);
+
+  let eligible=[];
+  const myCompanyUsers=usersList.filter(u=>u.companyId===currentUser.companyId);
+
+  if(isShopModel){
+    // Shop model hierarchy: CEO/Admin -> Shop Manager (optional, per
+    // shop) -> Shop Staff. Shop Staff can also report straight to the
+    // CEO/Admin if a shop has no manager assigned.
+    if(roleBeingCreated==='shopstaff'){
+      eligible=myCompanyUsers.filter(u=>u.role==='shopmanager'||u.role==='ceo'||u.role==='admin');
+      if(currentUser.role==='ceo')eligible=[{uid:currentUser.uid,name:currentUser.name+' (you, CEO)'},...eligible.filter(u=>u.uid!==currentUser.uid)];
+      if(currentUser.role==='shopmanager')eligible=[{uid:currentUser.uid,name:currentUser.name+' (you, Shop Manager)'},...eligible.filter(u=>u.uid!==currentUser.uid)];
+    }else if(roleBeingCreated==='shopmanager'||roleBeingCreated==='admin'||roleBeingCreated==='recovery'){
+      eligible=myCompanyUsers.filter(u=>u.role==='ceo');
+      if(currentUser.role==='ceo')eligible=[{uid:currentUser.uid,name:currentUser.name+' (you, CEO)'}];
+    }
+    sel.innerHTML=eligible.length
+      ? eligible.map(u=>`<option value="${u.uid}">${roleLabels[u.role]||''} ${u.name}</option>`).join('')
+      : '<option value="">No eligible options yet — create the right role first</option>';
+    return;
+  }
+
+  // who is eligible to be "reports to" depends on the ROLE BEING CREATED,
+  // following the hierarchy exactly as specified:
+  //   Agent reports to a Manager OR a Team Leader
+  //   Team Leader reports to a Manager only
+  //   Manager reports to a Regional Manager if the company has one,
+  //     otherwise to the CEO or an Administrator directly
+  //   Shop Owner reports to the CEO or an Administrator only
+  //   Regional Manager, Administrator, Recovery Officer report to the CEO
+  if(roleBeingCreated==='agent'){
+    eligible=myCompanyUsers.filter(u=>u.role==='manager'||u.role==='teamleader');
+  }else if(roleBeingCreated==='teamleader'){
+    eligible=myCompanyUsers.filter(u=>u.role==='manager');
+  }else if(roleBeingCreated==='manager'){
+    // a Manager can report to a Regional Manager (if the company uses
+    // that tier) or straight to the CEO/Admin — whoever is creating
+    // the Manager picks the right one from this combined list
+    eligible=myCompanyUsers.filter(u=>u.role==='regionalmanager'||u.role==='ceo'||u.role==='admin');
+    if(currentUser.role==='ceo')eligible=[{uid:currentUser.uid,name:currentUser.name+' (you, CEO)'},...eligible.filter(u=>u.uid!==currentUser.uid)];
+    if(currentUser.role==='regionalmanager')eligible=[{uid:currentUser.uid,name:currentUser.name+' (you, Regional Manager)'},...eligible.filter(u=>u.uid!==currentUser.uid)];
+  }else if(roleBeingCreated==='shopowner'){
+    eligible=myCompanyUsers.filter(u=>u.role==='ceo'||u.role==='admin');
+    if(currentUser.role==='ceo')eligible=[{uid:currentUser.uid,name:currentUser.name+' (you, CEO)'},...eligible.filter(u=>u.uid!==currentUser.uid)];
+  }else if(roleBeingCreated==='admin'||roleBeingCreated==='recovery'||roleBeingCreated==='regionalmanager'){
+    eligible=myCompanyUsers.filter(u=>u.role==='ceo');
+    if(currentUser.role==='ceo')eligible=[{uid:currentUser.uid,name:currentUser.name+' (you, CEO)'}];
+  }
+  // if the current user themself qualifies as a valid target and isn't
+  // already included above, make sure they appear (covers Manager
+  // creating their own Agent, Team Leader creating their own Agent, etc.)
+  if((roleBeingCreated==='agent'&&(currentUser.role==='manager'||currentUser.role==='teamleader'))||
+     (roleBeingCreated==='teamleader'&&currentUser.role==='manager')){
+    if(!eligible.some(u=>u.uid===currentUser.uid)){
+      eligible=[{uid:currentUser.uid,name:currentUser.name+' (you)'},...eligible];
+    }
+  }
+
+  sel.innerHTML=eligible.length
+    ? eligible.map(u=>`<option value="${u.uid}">${roleLabels[u.role]||''} ${u.name}</option>`).join('')
+    : '<option value="">No eligible options yet — create the right role first</option>';
+}
+
+function buildAllocateOptions(){
+  const u=currentUser;
+  const p=perms[u.role]||perms.agent;
+  const toSelect=document.getElementById('allocTo');
+  if(!toSelect)return;
+  const visible=getVisibleUsers();
+  let html='';
+  p.allocateTo.forEach(role=>{
+    visible.filter(v=>v.role===role&&v.status==='Active').forEach(v=>{
+      html+=`<option value="${v.uid}">${roleLabels[v.role]} — ${v.name}</option>`;
+    });
+  });
+  toSelect.innerHTML=html||'<option value="">No eligible recipients yet — create one under Users first</option>';
+
+  const banner=document.getElementById('allocModalBanner');
+  const text=document.getElementById('allocModalText');
+  if(banner&&text){
+    if(u.role==='manager'||u.role==='teamleader'){
+      banner.style.display='flex';
+      text.textContent='You can only allocate stock to Agents under you, and only from units you already hold.';
+    }else{
+      banner.style.display='none';
+    }
+  }
+
+  const addDevDest=document.getElementById('addDevDest');
+  if(addDevDest){
+    addDevDest.innerHTML=u.role==='ceo'
+      ? '<option>CEO Master Inventory</option>'
+      : '<option>CEO Master Inventory (pending CEO review)</option><option>Allocate directly to a Manager</option><option>Allocate directly to a Shop Owner</option>';
+    const addDevBanner=document.getElementById('addDevBanner');
+    const addDevText=document.getElementById('addDevText');
+    if(addDevBanner&&u.role==='admin'){
+      addDevBanner.style.display='flex';
+      addDevText.textContent='As an Administrator, stock you add can go to CEO master inventory or be allocated immediately — your choice below.';
+    }
+  }
+}
+
+// ======================================================
+// NAV
+// ======================================================
+const titles={dashboard:'Dashboard',ceo:'CEO Command Center',inventory:'Inventory',allocation:'Stock Allocation',mystock:'Stock',sales:'Sales',customers:'Customers',financing:'Financing Integration',recovery:'Recovery Management',commissions:'Commissions',performance:'Performance Center',reports:'Reports',uganda:'Uganda Analytics',warehouses:'Warehouses',users:'User Management',auditlogs:'Audit Logs',security:'Security Center',integrations:'Integrations',settings:'Settings'};
+
+function go(id){
+  // block CEO-only pages for non-ceo/admin
+  const restricted=['ceo','users','auditlogs','security','integrations','settings'];
+  if(restricted.includes(id)&&currentUser&&!['ceo','admin'].includes(currentUser.role)){
+    toast("You don't have access to this section",'var(--red)');
+    return;
+  }
+  // block top-tier-only pages: Warehouses, Uganda Analytics
+  const topTierOnly=['warehouses','uganda'];
+  if(topTierOnly.includes(id)&&currentUser&&!['ceo','admin','regionalmanager'].includes(currentUser.role)){
+    toast("You don't have access to this section",'var(--red)');
+    return;
+  }
+  // Financing Integration: strictly CEO/Admin only
+  if(id==='financing'&&currentUser&&!['ceo','admin'].includes(currentUser.role)){
+    toast("You don't have access to this section",'var(--red)');
+    return;
+  }
+  // Reports: not available to individual contributors, or to Managers/Team Leaders
+  if(id==='reports'&&currentUser&&!['ceo','admin','regionalmanager','shopmanager'].includes(currentUser.role)){
+    toast("You don't have access to this section",'var(--red)');
+    return;
+  }
+  // Agent, Shop Owner, Manager, and Team Leader all now use the
+  // unified "Stock" page instead of the standalone Inventory browser.
+  if(id==='inventory'&&currentUser&&['agent','shopstaff','shopowner','manager','teamleader'].includes(currentUser.role)){
+    toast("Your stock is on the Stock page",'var(--amber)');
+    go('mystock');
+    return;
+  }
+  // The old top-down Stock Allocation page is CEO/Admin (and Shop
+  // Manager/Shop Staff) territory now — everyone else allocates
+  // peer-to-peer from their own Stock page.
+  if(id==='allocation'&&currentUser&&['agent','shopowner','manager','teamleader'].includes(currentUser.role)){
+    toast("Use Allocate stock to another person on your Stock page",'var(--amber)');
+    go('mystock');
+    return;
+  }
+  document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
+  document.querySelectorAll('.nav').forEach(n=>n.classList.remove('on'));
+  const pg=document.getElementById('pg-'+id);
+  const nv=document.getElementById('nav-'+id);
+  if(pg)pg.classList.add('on');
+  if(nv)nv.classList.add('on');
+  document.getElementById('pageTitle').textContent=titles[id]||id;
+  window.scrollTo({top:0,behavior:'smooth'});
+  closeSb();
+  if(id==='inventory')renderGrid(visibleDevices()),renderTable(visibleDevices());
+  if(id==='customers')renderCustomers(visibleCustomers());
+  if(id==='users')renderUsers('');
+  if(id==='allocation'){renderPendingAllocations();renderRecentMovements();}
+  if(id==='settings')loadCompanySettingsPage();
+  if(id==='recovery')renderRecoveryQueue('aged');
+  if(id==='warehouses')loadWarehousesPage();
+  if(id==='commissions')renderCommissions('all');
+  if(id==='sales')renderReceiptsTable();
+  if(id==='mystock')renderMyStockPage();
+  if(id==='performance')renderPerformancePage();
+  if(id==='customers')renderCustomerApprovals();
+  if(id==='financing')loadFinancingPage();
+  if(id==='dashboard')renderDashboard();
+  setTimeout(()=>buildCharts(id),60);
+}
+
+function toggleSb(){document.getElementById('sb').classList.toggle('open');document.getElementById('sbOverlay').classList.toggle('on')}
+function closeSb(){document.getElementById('sb').classList.remove('open');document.getElementById('sbOverlay').classList.remove('on')}
+
+function setTab(el,grp){
+  const cont=grp?document.getElementById(grp):el.closest('.tabs');
+  if(cont)cont.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+  el.classList.add('on');
+}
+
+function openM(id){
+  document.getElementById(id).classList.add('open');
+  if(id==='mAllocate')loadAllocIMEI();
+  if(id==='mAddDevice')buildAllocateOptions();
+  if(id==='mCreateUser')populateReportsTo();
+  if(id==='mReportIssue')populateIssueDeviceSelect();
+  if(id==='mNewSale')prepSaleModal();
+  if(id==='mAddFinancedSale')populateFinanceDeviceSelect();
+  if(id==='mAddShop')populateShopManagerSelect();
+}
+function closeM(id){document.getElementById(id).classList.remove('open')}
+document.querySelectorAll('.mwrap').forEach(m=>m.addEventListener('click',function(e){if(e.target===this)this.classList.remove('open')}));
+
+function presetRole(role){
+  setTimeout(()=>{const s=document.getElementById('nuRole');if(s)s.value=role},80);
+}
+
+function toggleNotif(){document.getElementById('notifPanel').classList.toggle('open')}
+function clearNotifs(){document.querySelectorAll('.ni.unread').forEach(n=>n.classList.remove('unread'));toast('All notifications cleared')}
+document.addEventListener('click',e=>{if(!e.target.closest('#notifPanel')&&!e.target.closest('.ico'))document.getElementById('notifPanel').classList.remove('open')});
+
+function toggleFS(){if(!document.fullscreenElement)document.documentElement.requestFullscreen().catch(()=>{});else document.exitFullscreen()}
+
+function toast(msg,c='var(--green)'){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.style.borderColor=c;
+  t.style.opacity='1';t.style.transform='translateX(-50%) translateY(0)';
+  clearTimeout(t._t);
+  t._t=setTimeout(()=>{t.style.opacity='0';t.style.transform='translateX(-50%) translateY(20px)'},2800);
+}
+
+// ======================================================
+// SECURITY TOGGLES
+// ======================================================
+function toggleSetting(el){
+  el.classList.toggle('on');
+  toast(el.classList.contains('on')?'Setting turned on':'Setting turned off');
+}
+
+// ======================================================
+// WHATSAPP + EMAIL INTEGRATIONS
+// ======================================================
+const COMPANY_WHATSAPP='256703953711';
+const COMPANY_EMAIL='kabuusumonalisa@gmail.com';
+
+function openWA(message){
+  const url='https://wa.me/'+COMPANY_WHATSAPP+'?text='+encodeURIComponent(message);
+  window.open(url,'_blank');
+}
+function openMail(subject,body){
+  const url='mailto:'+COMPANY_EMAIL+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
+  window.location.href=url;
+}
+
+function testWA(){
+  openWA('Hello Monalisa, this is a test message from Monalisa Stock ERP. WhatsApp integration is working correctly.');
+  toast('Opening WhatsApp...');
+}
+function testEmail(){
+  openMail('Test message from Monalisa Stock ERP','Hello Monalisa,\n\nThis is a test email confirming the integration between Monalisa Stock ERP and your inbox is working correctly.\n\nSent by: '+(currentUser?currentUser.name:'System'));
+  toast('Opening your email app...');
+}
+
+function downloadInventoryPDF(){
+  try{
+    const { jsPDF }=window.jspdf;
+    const doc=new jsPDF({unit:'mm',format:'a4'});
+    const list=visibleDevices();
+
+    doc.setFont('helvetica','bold');doc.setFontSize(14);
+    doc.text('Monalisa Tech Solutions — Inventory Status',14,16);
+    doc.setFont('helvetica','normal');doc.setFontSize(9);
+    doc.text('Generated '+new Date().toLocaleString()+' by '+currentUser.name+' ('+(roleLabels[currentUser.role]||currentUser.role)+')',14,22);
+    doc.text(list.length+' device(s) visible to your account',14,27);
+
+    let y=36;
+    doc.setFont('helvetica','bold');doc.setFontSize(8);
+    const cols=[['IMEI',14],['Brand / Model',55],['Specs',105],['Sell price',135],['Holder',160],['Age',188]];
+    cols.forEach(([label,x])=>doc.text(label,x,y));
+    y+=2;doc.setDrawColor(150);doc.line(14,y,196,y);y+=5;
+
+    doc.setFont('helvetica','normal');doc.setFontSize(7.5);
+    list.forEach(d=>{
+      if(y>280){doc.addPage();y=16;}
+      doc.text(d.imei,14,y);
+      doc.text((d.brand+' '+d.model).slice(0,28),55,y);
+      doc.text((d.ram+'/'+d.storage),105,y);
+      doc.text('UGX '+d.sell.toLocaleString(),135,y);
+      doc.text((d.holder||'—').slice(0,16),160,y);
+      doc.text(d.age+'d',188,y);
+      y+=5.5;
+    });
+
+    doc.save('inventory-status-'+new Date().toISOString().slice(0,10)+'.pdf');
+    toast('Inventory PDF downloaded');
+    fbLogAction('REPORT_PDF',currentUser.name+' downloaded the inventory status PDF');
+  }catch(e){
+    console.error(e);
+    toast('Could not generate the PDF. Try again.','var(--red)');
+  }
+}
+
+function downloadReceiptPDF(){
+  try{
+    const { jsPDF }=window.jspdf;
+    const doc=new jsPDF({unit:'mm',format:[80,150]}); // narrow receipt-style page
+
+    const nr=document.getElementById('r-nr').textContent;
+    const cust=document.getElementById('r-cust').textContent;
+    const phone=document.getElementById('r-phone').textContent;
+    const nid=document.getElementById('r-nid').textContent;
+    const agent=document.getElementById('r-agent').textContent;
+    const brand=document.getElementById('r-brand').textContent;
+    const model=document.getElementById('r-model').textContent;
+    const specs=document.getElementById('r-specs').textContent;
+    const color=document.getElementById('r-color').textContent;
+    const imei=document.getElementById('r-imei').textContent;
+    const type=document.getElementById('r-type').textContent;
+    const total=document.getElementById('r-total').textContent;
+
+    let y=10;
+    const coName=(companyProfile.businessName||'Your Company').toUpperCase();
+    const addrParts=[companyProfile.businessAddress,companyProfile.district].filter(x=>x&&x!=='—');
+    const coAddr=addrParts.length?addrParts.join(', '):(companyProfile.businessAddress||'—');
+    const coContact=(companyProfile.businessPhone||'—')+'  |  '+(companyProfile.businessEmail||'—');
+    doc.setFont('helvetica','bold');doc.setFontSize(12);
+    doc.text(coName,40,y,{align:'center'});y+=5;
+    doc.setFont('helvetica','normal');doc.setFontSize(7.5);
+    doc.text(coAddr,40,y,{align:'center'});y+=3.5;
+    doc.text(coContact,40,y,{align:'center'});y+=6;
+
+    doc.setDrawColor(180);doc.setLineDashPattern([1,1],0);
+    doc.line(6,y,74,y);y+=5;
+
+    doc.setFont('helvetica','bold');doc.setFontSize(8.5);
+    doc.text(nr,40,y,{align:'center'});y+=7;
+
+    doc.setFont('helvetica','normal');doc.setFontSize(8);
+    const row=(label,val)=>{
+      doc.text(label,6,y);
+      doc.setFont('helvetica','bold');
+      doc.text(String(val),74,y,{align:'right'});
+      doc.setFont('helvetica','normal');
+      y+=5;
+    };
+    row('Date',new Date().toLocaleDateString());
+    row('Time',new Date().toLocaleTimeString());
+    row('Customer',cust);
+    row('Phone',phone);
+    row('National ID',nid);
+    row('Sold by',agent);
+
+    y+=1;doc.line(6,y,74,y);y+=5;
+
+    row('Brand',brand);
+    row('Model',model);
+    row('Specs',specs);
+    row('Color',color);
+    doc.setFontSize(6.5);
+    row('IMEI',imei);
+    doc.setFontSize(8);
+    row('Sale type',type);
+
+    y+=1;doc.line(6,y,74,y);y+=6;
+    doc.setFont('helvetica','bold');doc.setFontSize(11);
+    doc.text('TOTAL',6,y);
+    doc.text(total,74,y,{align:'right'});
+    y+=9;
+
+    doc.setDrawColor(0,158,120);doc.setLineWidth(0.6);
+    doc.circle(40,y+8,9);
+    doc.setFont('helvetica','bold');doc.setFontSize(6);
+    doc.setTextColor(0,158,120);
+    const stampWords=(companyProfile.businessName||'YOUR COMPANY').split(' ').filter(Boolean).slice(0,3);
+    let sy=y+6;
+    stampWords.forEach(w=>{doc.text(w.toUpperCase(),40,sy,{align:'center'});sy+=2.5;});
+    doc.setTextColor(0);
+    y+=20;
+    doc.setFont('helvetica','normal');doc.setFontSize(7);
+    doc.text('Thank you for choosing us.',40,y,{align:'center'});
+
+    doc.save(nr.replace('RECEIPT #','')+'.pdf');
+    toast('Receipt downloaded as PDF');
+    fbLogAction('RECEIPT_PDF',currentUser.name+' downloaded a PDF receipt: '+nr);
+  }catch(e){
+    console.error(e);
+    toast('Could not generate the PDF. Try again.','var(--red)');
+  }
+}
+
+function sendReceiptWA(){
+  const nr=document.getElementById('r-nr').textContent;
+  const cust=document.getElementById('r-cust').textContent;
+  const phone=document.getElementById('r-phone').textContent;
+  const brand=document.getElementById('r-brand').textContent;
+  const model=document.getElementById('r-model').textContent;
+  const imei=document.getElementById('r-imei').textContent;
+  const total=document.getElementById('r-total').textContent;
+  const agent=document.getElementById('r-agent').textContent;
+  const msg=`New sale recorded — ${nr}\n\nCustomer: ${cust} (${phone})\nDevice: ${brand} ${model}\nIMEI: ${imei}\nAmount: ${total}\nSold by: ${agent}\n\n${(companyProfile.businessName||'Your Company')}`;
+  openWA(msg);
+  toast('Opening WhatsApp with receipt...');
+}
+function sendReceiptEmail(){
+  const nr=document.getElementById('r-nr').textContent;
+  const cust=document.getElementById('r-cust').textContent;
+  const phone=document.getElementById('r-phone').textContent;
+  const brand=document.getElementById('r-brand').textContent;
+  const model=document.getElementById('r-model').textContent;
+  const imei=document.getElementById('r-imei').textContent;
+  const total=document.getElementById('r-total').textContent;
+  const agent=document.getElementById('r-agent').textContent;
+  const addrParts=[companyProfile.businessAddress,companyProfile.district].filter(x=>x&&x!=='—');
+  const body=`Receipt: ${nr}\n\nCustomer: ${cust}\nPhone: ${phone}\nDevice: ${brand} ${model}\nIMEI: ${imei}\nAmount: ${total}\nSold by: ${agent}\n\n${(companyProfile.businessName||'Your Company')}, ${addrParts.join(', ')||'—'}`;
+  openMail('Receipt '+nr,body);
+  toast('Opening your email app...');
+}
+function alertRecoveryWA(model,imei,holder,days){
+  const msg=`Recovery alert\n\nDevice: ${model}\nIMEI: ${imei}\nCurrently with: ${holder}\nDays in field: ${days}\n\nThis unit needs attention. Sent from Monalisa Stock ERP.`;
+  openWA(msg);
+  toast('Opening WhatsApp...');
+}
+function emailReport(reportName){
+  openMail(reportName+' — Monalisa Stock ERP','Hello Monalisa,\n\nPlease find attached the '+reportName.toLowerCase()+' for your review.\n\n(In the live system this would include the generated PDF as an attachment.)\n\nRegards,\nMonalisa Stock ERP');
+  toast('Opening your email app...');
+}
+function shareNewUserWA(){
+  const name=document.getElementById('nuName').value||'New user';
+  const email=document.getElementById('nuEmail').value||'their email';
+  const role=roleLabels[document.getElementById('nuRole').value]||document.getElementById('nuRole').value;
+  const pass=document.getElementById('nuPass').value||'(set a password first)';
+  const msg=`Welcome to Monalisa Stock ERP\n\nHello ${name}, your account has been created.\n\nRole: ${role}\nLogin email: ${email}\nTemporary password: ${pass}\n\nPlease sign in and consider changing your password.`;
+  openWA(msg);
+  toast('Opening WhatsApp to send credentials...');
+}
+
+// ======================================================
+// DEVICE DATA
+// ======================================================
+// NOTE: holderUid is the real Firebase user ID of whoever currently holds
+// this device. Seed/demo rows below use empty string since the demo
+// holders aren't real accounts. Any device added or allocated through
+// the app from now on will have a real holderUid set automatically,
+// which is what territory scoping checks against.
+const devices=[
+  {brand:'Samsung',model:'Galaxy A55 5G',ram:'8GB',storage:'128GB',color:'Awesome Blue',imei:'357123459871234',buy:980000,sell:1250000,holder:'Agent Nalwoga',holderUid:'',loc:'Kamwokya, Kampala',age:32,status:'allocated'},
+  {brand:'Tecno',model:'Camon 30 Pro',ram:'12GB',storage:'256GB',color:'Black',imei:'352987650123456',buy:680000,sell:895000,holder:'Manager Kato Peter',holderUid:'',loc:'Kampala Central',age:3,status:'allocated'},
+  {brand:'Infinix',model:'Note 40 Pro 5G',ram:'8GB',storage:'256GB',color:'Gold',imei:'359001234567890',buy:590000,sell:780000,holder:'TL Ssali Moses',holderUid:'',loc:'Gulu North',age:18,status:'allocated'},
+  {brand:'Itel',model:'A70 Pro',ram:'4GB',storage:'64GB',color:'Purple',imei:'356789012345678',buy:240000,sell:320000,holder:'Agent Apio Grace',holderUid:'',loc:'Gulu',age:5,status:'allocated'},
+  {brand:'Redmi',model:'Note 13 Pro 5G',ram:'8GB',storage:'256GB',color:'Ocean Teal',imei:'354123456789012',buy:740000,sell:950000,holder:'CEO Stock',holderUid:'',loc:'CEO Warehouse',age:7,status:'ceo'},
+  {brand:'Nokia',model:'G60 5G',ram:'6GB',storage:'128GB',color:'Black',imei:'351234567890123',buy:560000,sell:720000,holder:'Shop Kibira',holderUid:'',loc:'Entebbe Road',age:15,status:'allocated'},
+  {brand:'Oppo',model:'A78 5G',ram:'8GB',storage:'128GB',color:'Glowing Black',imei:'358901234567890',buy:640000,sell:850000,holder:'Agent Nakato Sarah',holderUid:'',loc:'Jinja',age:2,status:'allocated'},
+  {brand:'Vivo',model:'Y36 5G',ram:'8GB',storage:'128GB',color:'Meteorite Black',imei:'355678901234567',buy:610000,sell:780000,holder:'Agent Ssempijja',holderUid:'',loc:'Mbarara',age:24,status:'allocated'},
+  {brand:'Samsung',model:'Galaxy A15',ram:'4GB',storage:'128GB',color:'Light Blue',imei:'358001234567890',buy:420000,sell:580000,holder:'CEO Stock',holderUid:'',loc:'CEO Warehouse',age:9,status:'ceo'},
+  {brand:'Huawei',model:'Nova 12 SE',ram:'8GB',storage:'256GB',color:'Green',imei:'356001234567890',buy:710000,sell:920000,holder:'CEO Stock',holderUid:'',loc:'CEO Warehouse',age:4,status:'ceo'},
+  {brand:'Tecno',model:'Spark 20 Pro',ram:'8GB',storage:'128GB',color:'Magic Skin White',imei:'352001234567890',buy:370000,sell:485000,holder:'Agent Apio Grace',holderUid:'',loc:'Gulu',age:6,status:'allocated'},
+  {brand:'Itel',model:'P55 Plus',ram:'4GB',storage:'64GB',color:'Diamond Black',imei:'359112233445566',buy:210000,sell:285000,holder:'CEO Stock',holderUid:'',loc:'CEO Warehouse',age:11,status:'ceo'},
+];
+
+// NOTE: agentUid is the real Firebase user ID of the agent who serves
+// this customer. Seed/demo rows use empty string; any customer added
+// through the app from now on gets the real logged-in user's uid set
+// automatically, which is what territory scoping checks against.
+const customers=[
+  {name:'Mukasa David',phone:'+256 772 345 678',nid:'CM98765432BC',district:'Kampala',village:'Kamwokya',agent:'Apio Grace',agentUid:'',purchases:2,last:'18 Jun 2025'},
+  {name:'Namulondo Joyce',phone:'+256 701 234 567',nid:'NJ72345678AB',district:'Wakiso',village:'Nansana',agent:'Mukasa Ronald',agentUid:'',purchases:1,last:'18 Jun 2025'},
+  {name:'Ssekandi Fred',phone:'+256 782 901 234',nid:'SF61238976CD',district:'Jinja',village:'Mpumudde',agent:'Nakato Sarah',agentUid:'',purchases:3,last:'18 Jun 2025'},
+  {name:'Kiggundu Bashir',phone:'+256 756 123 890',nid:'KB55123456EF',district:'Kampala',village:'Bwaise',agent:'Otim Charles',agentUid:'',purchases:1,last:'18 Jun 2025'},
+  {name:'Nalwanga Rose',phone:'+256 714 567 890',nid:'NR44987654GH',district:'Mbarara',village:'Kakiika',agent:'Namukasa Lydia',agentUid:'',purchases:2,last:'17 Jun 2025'},
+  {name:'Byaruhanga Tom',phone:'+256 700 456 789',nid:'BT38765432IJ',district:'Gulu',village:'Layibi',agent:'Apio Grace',agentUid:'',purchases:4,last:'16 Jun 2025'},
+];
+
+// usersList is now populated live from Firebase (see fbUsers listener below).
+// It starts empty and fills in once the database responds.
+let usersList=[];
+
+// ======================================================
+// AGING POLICY — set per company by the CEO, separately for field
+// staff (Agent/Team Leader/Manager) and Shop Owners
+// ======================================================
+let agingPolicy={
+  field:{good:9,warn:20},
+  shop:{good:14,warn:30}
+};
+
+function loadAgingPolicy(){
+  if(!currentUser||!currentUser.companyId)return Promise.resolve();
+  return fbDb.ref('companies/'+currentUser.companyId+'/settings/agingPolicy').once('value').then(snap=>{
+    const v=snap.val();
+    if(v){
+      agingPolicy.field=v.field||agingPolicy.field;
+      agingPolicy.shop=v.shop||agingPolicy.shop;
+    }
+  });
+}
+function saveAgingPolicy(which){
+  if(!currentUser.companyId)return;
+  const good=parseInt(document.getElementById(which==='field'?'ageGoodField':'ageGoodShop').value)||1;
+  const warn=parseInt(document.getElementById(which==='field'?'ageWarnField':'ageWarnShop').value)||good+1;
+  if(warn<=good){
+    toast('The warning cutoff must be greater than the good cutoff','var(--red)');
+    return;
+  }
+  agingPolicy[which]={good,warn};
+  fbDb.ref('companies/'+currentUser.companyId+'/settings/agingPolicy/'+which).set({good,warn}).then(()=>{
+    toast((which==='field'?'Field staff':'Shop owner')+' aging policy saved');
+    fbLogAction('SETTINGS_UPDATED',currentUser.name+' updated the '+which+' aging policy ('+good+'/'+warn+' days)');
+    renderGrid(visibleDevices());renderTable(visibleDevices());
+    if(document.getElementById('pg-recovery')?.classList.contains('on'))renderRecoveryQueue();
+  }).catch(()=>toast('Could not save — check your permissions','var(--red)'));
+}
+// which policy applies to a given device depends on who currently
+// holds it — Shop Owners get their own separate policy
+function policyForDevice(d){
+  if(!d.holderUid)return agingPolicy.field;
+  const holder=usersList.find(u=>u.uid===d.holderUid);
+  return (holder&&holder.role==='shopowner')?agingPolicy.shop:agingPolicy.field;
+}
+function ageClass(d){const p=policyForDevice(d);return d.age<=p.good?'age-g':d.age<=p.warn?'age-a':'age-r'}
+function ageBadge(d){const p=policyForDevice(d);return d.age<=p.good?'b-g':d.age<=p.warn?'b-a':'b-r'}
+function ageWord(d){const p=policyForDevice(d);return d.age<=p.good?'Good':d.age<=p.warn?'Watch':'Aged'}
+function isInRecoveryPhase(d){const p=policyForDevice(d);return d.age>p.warn&&d.status!=='sold'&&d.status!=='recovered'&&!d.hasIssue}
+
+function renderGrid(list){
+  const g=document.getElementById('deviceGrid');if(!g)return;
+  g.innerHTML=list.map(d=>`
+    <div class="dcard" onclick="openDetail('${d.brand} ${d.model}','${d.imei}','${d.holder}','${d.age}','${d.loc}')">
+      <div class="dcard-top"><div class="dcard-icon">📱</div><span class="age ${ageClass(d)}">${d.age}d</span></div>
+      <div class="dcard-brand">${d.brand}</div>
+      <div class="dcard-model">${d.model}</div>
+      <div class="dcard-specs"><span class="chip">${d.ram}</span><span class="chip">${d.storage}</span><span class="chip">${d.color}</span></div>
+      <div class="dcard-foot"><div class="dcard-price">UGX ${d.sell.toLocaleString()}</div></div>
+      <div class="dcard-holder">With: ${d.holder}</div>
+    </div>`).join('');
+}
+function renderTable(list){
+  const tb=document.getElementById('invTbody');if(!tb)return;
+  tb.innerHTML=list.map(d=>`
+    <tr style="cursor:pointer" onclick="openDetail('${d.brand} ${d.model}','${d.imei}','${d.holder}','${d.age}','${d.loc}')">
+      <td class="mono">${d.imei}</td>
+      <td><span class="bold">${d.brand}</span><br><span class="xs muted">${d.model}</span></td>
+      <td>${d.ram} / ${d.storage}</td>
+      <td>UGX ${d.buy.toLocaleString()}</td>
+      <td class="bold">UGX ${d.sell.toLocaleString()}</td>
+      <td>${d.holder}</td>
+      <td><span class="age ${ageClass(d)}">${d.age}d</span></td>
+      <td><span class="badge ${ageBadge(d)}">${ageWord(d)}</span></td>
+    </tr>`).join('');
+}
+function filterInv(){
+  const b=document.getElementById('invBrand').value;
+  const a=document.getElementById('invAge').value;
+  let l=visibleDevices();
+  if(b)l=l.filter(d=>d.brand===b);
+  if(a==='g')l=l.filter(d=>d.age<=9);
+  else if(a==='a')l=l.filter(d=>d.age>=10&&d.age<=20);
+  else if(a==='r')l=l.filter(d=>d.age>20);
+  renderGrid(l);renderTable(l);
+}
+function filterStatus(s){
+  let l=visibleDevices();
+  if(s==='ceo')l=l.filter(d=>d.status==='ceo');
+  else if(s==='allocated')l=l.filter(d=>d.status==='allocated');
+  else if(s==='aged')l=l.filter(d=>d.age>20);
+  renderGrid(l);renderTable(l);
+}
+
+function renderCustomers(list){
+  const tb=document.getElementById('custTbody');if(!tb)return;
+  tb.innerHTML=list.map(c=>`
+    <tr>
+      <td class="bold">${c.name}</td><td>${c.phone}</td><td class="mono">${c.nid}</td><td>${c.district}</td><td>${c.village}</td><td>${c.agent}</td>
+      <td><span class="badge b-b">${c.purchases}</span></td><td>${c.last}</td>
+      <td><button class="btn btn-wa btn-sm" onclick="openWA('Hello ${c.name}, this is Monalisa Tech Solutions following up on your purchase. ')"><i class="fab fa-whatsapp"></i></button></td>
+    </tr>`).join('');
+}
+function filterCustomers(){
+  const q=(document.getElementById('custSearch').value||'').toLowerCase();
+  const d=document.getElementById('custDistrict').value;
+  let l=visibleCustomers();
+  if(q)l=l.filter(c=>c.name.toLowerCase().includes(q)||c.phone.includes(q)||c.nid.toLowerCase().includes(q));
+  if(d)l=l.filter(c=>c.district===d);
+  renderCustomers(l);
+}
+// CEO/Admin only — every sale made by a Shop Owner, Manager, Team
+// Leader, or Agent creates a customer that sits here until CEO/Admin
+// approves it. Approving makes it "reflect" in the Customers section
+// for that seller's whole team immediately. Rejecting just marks it
+// rejected — nothing is ever deleted.
+function renderCustomerApprovals(){
+  const card=document.getElementById('custPendingCard');
+  const body=document.getElementById('custPendingApprovals');
+  if(!card||!body)return;
+  if(!currentUser||!(currentUser.role==='ceo'||currentUser.role==='admin')){card.style.display='none';return}
+  const pending=customers.filter(c=>c.approvalStatus==='pending');
+  card.style.display=pending.length?'block':'none';
+  if(!pending.length)return;
+  body.innerHTML=`<div class="tw"><table><thead><tr><th>Name</th><th>Phone</th><th>Sold by</th><th></th></tr></thead><tbody>${pending.map(c=>`
+    <tr><td class="bold">${c.name}</td><td>${c.phone}</td><td>${c.agent}</td>
+    <td><button class="btn btn-g btn-sm" onclick="approveCustomer('${c._key}')"><i class="fas fa-check"></i>Approve</button> <button class="btn btn-danger btn-sm" onclick="rejectCustomerPending('${c._key}')"><i class="fas fa-times"></i>Reject</button></td></tr>`).join('')}</tbody></table></div>`;
+}
+function approveCustomer(key){
+  if(!fbCustomers||!key)return;
+  fbCustomers.child(key).update({approvalStatus:'approved'}).then(()=>{
+    toast('Customer approved — now visible to their team');
+    fbLogAction('CUSTOMER_APPROVED',currentUser.name+' approved a new customer record');
+  });
+}
+function rejectCustomerPending(key){
+  if(!fbCustomers||!key)return;
+  // soft-reject only — the record stays in the database, it just
+  // never becomes visible, since nothing gets deleted in this system
+  fbCustomers.child(key).update({approvalStatus:'rejected'}).then(()=>{
+    toast('Customer entry rejected','var(--amber)');
+    fbLogAction('CUSTOMER_REJECTED',currentUser.name+' rejected a new customer record');
+  });
+}
+
+function renderUsersFromDb(){
+  if(!fbDb)return;
+  fbDb.ref('users').on('value',snap=>{
+    const val=snap.val()||{};
+    usersList=Object.keys(val).map(uid=>({uid,...val[uid]}));
+    if(document.getElementById('pg-users')?.classList.contains('on')){
+      renderUsers('');
+    }
+    if(document.getElementById('pg-dashboard')?.classList.contains('on')){
+      renderDashboard();
+    }
+  });
+}
+
+function renderUsers(roleFilter){
+  const tb=document.getElementById('usersTbody');if(!tb)return;
+  const visible=getVisibleUsers();
+  let l=visible;
+  if(roleFilter)l=l.filter(u=>u.role===roleFilter);
+  const canManage=currentUser&&currentUser.role==='ceo';
+
+  // stat counters only make sense company-wide, so only show real numbers
+  // to CEO/Admin; everyone else sees their own scoped count instead
+  const setStat=(id,val)=>{const el=document.getElementById(id);if(el)el.textContent=val};
+  const isWideView=currentUser&&(currentUser.role==='ceo'||currentUser.role==='admin');
+  setStat('statTotalUsers',isWideView?visible.length:visible.length);
+  setStat('statAdmins',isWideView?visible.filter(u=>u.role==='admin').length:'—');
+  setStat('statManagers',isWideView?visible.filter(u=>u.role==='manager').length:'—');
+  setStat('statTLs',visible.filter(u=>u.role==='teamleader').length);
+  setStat('statAgents',visible.filter(u=>u.role==='agent').length);
+  setStat('statShops',isWideView?visible.filter(u=>u.role==='shopowner').length:'—');
+
+  const ceoTotal=document.getElementById('ceoStatTotalUsers');
+  if(ceoTotal)ceoTotal.textContent=currentUser&&currentUser.role==='ceo'?usersList.length:visible.length;
+
+  const adminsListEl=document.getElementById('ceoAdminsList');
+  if(adminsListEl){
+    if(currentUser&&currentUser.role==='ceo'){
+      const admins=usersList.filter(u=>u.role==='admin');
+      adminsListEl.innerHTML=admins.length?admins.map(a=>`
+        <div class="row card-sm" style="justify-content:space-between">
+          <div class="row"><div class="ava ava-p" style="width:34px;height:34px;font-size:12px">${initials(a.name)}</div><div><div class="bold sm">${a.name}</div><div class="xs muted">${a.district||'Uganda'}</div></div></div>
+          <span class="badge ${a.status==='Active'?'b-g':'b-a'}">${a.status||'Active'}</span>
+        </div>`).join(''):'<div class="xs muted">No administrators yet. Use "Add admin" to create one.</div>';
+    }else{
+      adminsListEl.innerHTML='<div class="xs muted">Administrator details are visible to the CEO only.</div>';
+    }
+  }
+
+  if(l.length===0){
+    tb.innerHTML='<tr><td colspan="8" class="xs muted" style="text-align:center;padding:20px">No users visible to you yet.</td></tr>';
+    return;
+  }
+  tb.innerHTML=l.map(u=>{
+    const label=roleLabels[u.role]||u.role;
+    const roleBadgeClass=u.role==='admin'?'b-v':u.role==='manager'?'b-b':u.role==='teamleader'?'b-v':u.role==='recovery'?'b-r':'b-g';
+    const statusBadge=u.status==='Active'?'b-g':'b-a';
+    const isSelf=currentUser&&u.uid===currentUser.uid;
+    let actionCell='<span class="xs muted">View only</span>';
+    if(canManage&&!isSelf){
+      actionCell=u.status==='Active'
+        ?`<button class="btn btn-danger btn-sm" onclick="suspendUser('${u.uid}','${u.name.replace(/'/g,"")}')">Suspend</button>`
+        :`<button class="btn btn-g btn-sm" onclick="reactivateUser('${u.uid}','${u.name.replace(/'/g,"")}')">Reactivate</button>`;
+    }else if(isSelf){
+      actionCell='<span class="xs muted">This is you</span>';
+    }
+    return `<tr>
+      <td class="bold">${u.name}</td>
+      <td><span class="badge ${roleBadgeClass}">${label}</span></td>
+      <td>${u.phone||'—'}</td><td>${u.district||'—'}</td><td>${resolveReportsTo(u.reportsTo)}</td><td>${u.joined||'—'}</td>
+      <td><span class="badge ${statusBadge}">${u.status||'Active'}</span></td>
+      <td>${actionCell}</td>
+    </tr>`;
+  }).join('');
+}
+function filterUsers(role){renderUsers(role)}
+
+function suspendUser(uid,name){
+  if(!confirm('Suspend '+name+'? They will not be able to log in until reactivated.'))return;
+  fbDb.ref('users/'+uid+'/status').set('Suspended').then(()=>{
+    toast(name+' has been suspended');
+    fbLogAction('USER_SUSPENDED',currentUser.name+' suspended '+name);
+  });
+}
+function reactivateUser(uid,name){
+  fbDb.ref('users/'+uid+'/status').set('Active').then(()=>{
+    toast(name+' has been reactivated');
+    fbLogAction('USER_REACTIVATED',currentUser.name+' reactivated '+name);
+  });
+}
+
+// ======================================================
+// DEVICE DETAIL PANEL
+// ======================================================
+function openDetail(model,imei,holder,age,loc){
+  document.getElementById('dp-title').textContent=model;
+  const ac=parseInt(age)>20?'age-r':parseInt(age)>9?'age-a':'age-g';
+  const canReallocate=currentUser&&perms[currentUser.role].allocateTo.length>0;
+  document.getElementById('dp-body').innerHTML=`
+    <div style="text-align:center;background:var(--card2);border-radius:10px;padding:24px;margin-bottom:16px">
+      <div style="font-size:56px;margin-bottom:8px">📱</div>
+      <div class="bold" style="font-size:17px">${model}</div>
+      <div class="xs muted mt4" style="font-family:monospace">${imei}</div>
+      <span class="age ${ac} mt8" style="display:inline-flex;margin-top:8px">${age} days in field</span>
+    </div>
+    <div class="card-sm mb12">
+      <div class="hd2">Current location</div>
+      <div class="row mb8"><i class="fas fa-user green"></i><span class="bold">${holder}</span></div>
+      <div class="row"><i class="fas fa-map-marker-alt muted"></i><span class="xs muted">${loc}</span></div>
+    </div>
+    <div class="card-sm mb12">
+      <div class="hd2">Movement history</div>
+      <div class="tl">
+        <div class="tl-item"><div class="tl-dot" style="background:var(--green)"></div><div class="tl-when">15 May 2025</div><div class="tl-what">Added to CEO stock</div><div class="tl-who">Stock intake from supplier</div></div>
+        <div class="tl-item"><div class="tl-dot" style="background:var(--blue)"></div><div class="tl-when">20 May 2025</div><div class="tl-what">CEO to Manager Kato Peter</div><div class="tl-who">Allocation, confirmed both sides</div></div>
+        <div class="tl-item"><div class="tl-dot" style="background:var(--blue)"></div><div class="tl-when">22 May 2025</div><div class="tl-what">Manager to TL Ssali Moses</div><div class="tl-who">Team allocation</div></div>
+        <div class="tl-item"><div class="tl-dot" style="background:${parseInt(age)>20?'var(--red)':'var(--amber)'}"></div><div class="tl-when">25 May 2025</div><div class="tl-what">TL to ${holder}</div><div class="tl-who">${parseInt(age)>20?'Field — AGED, recovery triggered':'Field assignment — in progress'}</div></div>
+      </div>
+    </div>
+    <div class="row">
+      ${canReallocate?`<button class="btn btn-g btn-sm" onclick="toast('Allocation form opened');closeDetail();openM('mAllocate')">Reallocate</button>`:`<button class="btn btn-ghost btn-sm" disabled title="Your role cannot reallocate stock">Reallocate (no permission)</button>`}
+      <button class="btn btn-danger btn-sm" onclick="toast('Recovery case created','var(--red)');closeDetail()">Start recovery</button>
+      <button class="btn btn-wa btn-sm" onclick="openWA('Device check: ${model}, IMEI ${imei}, currently with ${holder}, ${age} days in field.')"><i class="fab fa-whatsapp"></i></button>
+    </div>`;
+  document.getElementById('dOverlay').classList.add('open');
+  document.getElementById('dPanel').classList.add('open');
+}
+function openTeamStockDrilldown(teamLeaderUid,teamLeaderName){
+  const myTeam=getVisibleUsers();
+  const tlAgents=myTeam.filter(u=>u.role==='agent'&&u.reportsTo===teamLeaderUid);
+  document.getElementById('dp-title').textContent=teamLeaderName+"'s team";
+  const blocks=tlAgents.map(a=>{
+    const aStock=devices.filter(d=>d.holderUid===a.uid&&d.status!=='sold'&&!d.hasIssue);
+    const aQ=stockQuotientFor(a.uid);
+    return `<div class="card-sm mb12">
+      <div class="between mb8"><span class="bold sm">${a.name}</span><span class="badge ${quotientBadgeClass(aQ.quotient)}">${aQ.quotient}% efficient</span></div>
+      ${aStock.length?`<div class="tw"><table><thead><tr><th>IMEI</th><th>Brand / Model</th><th>Specs</th><th>Age</th></tr></thead><tbody>${aStock.map(d=>`<tr style="cursor:pointer" onclick="openDetail('${d.brand} ${d.model}','${d.imei}','${d.holder}','${d.age}','${d.loc}')"><td class="mono" style="font-size:10px">${d.imei}</td><td class="bold" style="font-size:11.5px">${d.brand} ${d.model}</td><td class="xs muted">${d.ram}/${d.storage}, ${d.color}</td><td><span class="age ${ageClass(d)}">${d.age}d</span></td></tr>`).join('')}</tbody></table></div>`:'<div class="xs muted">No stock held right now.</div>'}
+    </div>`;
+  }).join('');
+  document.getElementById('dp-body').innerHTML=blocks||'<div class="xs muted">No agents under this Team Leader yet.</div>';
+  document.getElementById('dOverlay').classList.add('open');
+  document.getElementById('dPanel').classList.add('open');
+}
+
+function closeDetail(){
+  document.getElementById('dOverlay').classList.remove('open');
+  document.getElementById('dPanel').classList.remove('open');
+}
+
+// ======================================================
+// SEARCH
+// ======================================================
+const sData=[
+  {tag:'IMEI',title:'357123459871234',sub:'Samsung Galaxy A55 5G, Agent Nalwoga, 32 days',fn:()=>openDetail('Samsung Galaxy A55 5G','357123459871234','Agent Nalwoga','32','Kampala')},
+  {tag:'IMEI',title:'352987650123456',sub:'Tecno Camon 30 Pro, Manager Kato, 3 days',fn:()=>openDetail('Tecno Camon 30 Pro','352987650123456','Manager Kato',3,'Kampala')},
+  {tag:'Customer',title:'Mukasa David',sub:'Kamwokya, Kampala, Agent Apio Grace',fn:()=>go('customers')},
+  {tag:'Customer',title:'Namulondo Joyce',sub:'Nansana, Wakiso',fn:()=>go('customers')},
+  {tag:'Receipt',title:'RCP-20250618-0047',sub:'Tecno Spark 20 Pro, UGX 485,000, Watu Credit',fn:()=>go('sales')},
+  {tag:'Agent',title:'Apio Grace',sub:'Gulu, TL Ssali Moses, 24 units sold',fn:()=>go('performance')},
+  {tag:'Recovery',title:'Vivo Y36 5G',sub:'Agent Ssempijja, Mbarara, 24 days',fn:()=>go('recovery')},
+  {tag:'Manager',title:'Kato Peter',sub:'Kampala, 124 units, UGX 98.4M',fn:()=>go('performance')},
+  {tag:'Admin',title:'Namugga Sarah',sub:'Operations Administrator, Kampala HQ',fn:()=>go('users')},
+];
+function doSearch(q){
+  const p=document.getElementById('searchPanel');
+  if(!q){p.classList.remove('open');return}
+  const r=sData.filter(d=>d.title.toLowerCase().includes(q.toLowerCase())||d.sub.toLowerCase().includes(q.toLowerCase()));
+  if(!r.length){p.innerHTML='<div style="padding:14px;text-align:center;color:var(--muted);font-size:12.5px">Nothing found for "'+q+'"</div>';p.classList.add('open');return}
+  p.innerHTML=r.slice(0,6).map(x=>`<div class="sr" onclick="sData.find(d=>d.title==='${x.title}').fn();hideSP()"><div class="sr-tag">${x.tag}</div><div class="sr-title">${x.title}</div><div class="sr-sub">${x.sub}</div></div>`).join('');
+  p.classList.add('open');
+}
+function showSP(){if(document.getElementById('sInput').value)document.getElementById('searchPanel').classList.add('open')}
+function hideSP(){document.getElementById('searchPanel').classList.remove('open')}
+
+// ======================================================
+// ACTIONS
+// ======================================================
+// ======================================================
+// REAL ALLOCATIONS — rendering, confirming, rejecting
+// ======================================================
+let allAllocations=[];
+
+function renderPendingAllocations(){
+  const wrap=document.getElementById('pendingAllocList');
+  if(!wrap||!currentUser)return;
+  const mine=allAllocations.filter(a=>a.toUid===currentUser.uid&&!a.confirmed&&!a.rejected);
+  if(mine.length===0){
+    wrap.innerHTML='<div class="card"><div class="xs muted" style="text-align:center;padding:10px 0">No pending allocations waiting for your confirmation.</div></div>';
+    return;
+  }
+  wrap.innerHTML=mine.map(a=>`
+    <div class="card" style="border-left:3px solid var(--amber)">
+      <div class="between mb8"><span class="bold sm">${a.imeis.length} unit${a.imeis.length>1?'s':''} incoming</span><span class="badge b-a">Awaiting your confirmation</span></div>
+      <div class="xs muted mb8">From ${a.fromName}</div>
+      <div class="xs mb8" style="font-family:monospace">${a.imeis.join(', ')}</div>
+      <div class="xs muted mb12">Sent ${new Date(a.sentAt).toLocaleString()}</div>
+      <div class="row">
+        <button class="btn btn-g btn-sm" onclick="confirmAllocation('${a.id}')">Confirm receipt</button>
+        <button class="btn btn-danger btn-sm" onclick="rejectAllocation('${a.id}')">Reject</button>
+      </div>
+    </div>`).join('');
+}
+
+function renderRecentMovements(){
+  const wrap=document.getElementById('recentMovementsList');
+  if(!wrap)return;
+  const relevant=allAllocations.filter(a=>currentUser.role==='ceo'||currentUser.role==='admin'||a.fromUid===currentUser.uid||a.toUid===currentUser.uid).sort((a,b)=>b.sentAt-a.sentAt).slice(0,8);
+  if(relevant.length===0){
+    wrap.innerHTML='<div class="xs muted">No movements yet.</div>';
+    return;
+  }
+  wrap.innerHTML=relevant.map(a=>{
+    const dot=a.confirmed?'var(--green)':a.rejected?'var(--red)':'var(--amber)';
+    const statusWord=a.confirmed?'confirmed':a.rejected?'rejected':'pending confirmation';
+    return `<div class="tl-item"><div class="tl-dot" style="background:${dot}"></div><div class="tl-when">${new Date(a.sentAt).toLocaleString()}</div><div class="tl-what">${a.fromName} to ${a.toName}</div><div class="tl-who">${a.imeis.length} unit(s), ${statusWord}</div></div>`;
+  }).join('');
+}
+
+function confirmAllocation(allocId){
+  const a=allAllocations.find(x=>x.id===allocId);
+  if(!a)return;
+  if(fbAllocations&&fbReady){
+    fbAllocations.child(allocId).update({confirmed:true,confirmedAt:Date.now()});
+  }
+  // transfer real ownership: each device's holderUid becomes the confirming user
+  a.imeis.forEach(imei=>{
+    fbUpdateDevice(imei,{holderUid:currentUser.uid,holder:currentUser.name,status:'allocated',age:0,pendingTo:null});
+  });
+  toast('Allocation confirmed. Stock is now yours.');
+  fbLogAction('ALLOCATION_CONFIRMED',currentUser.name+' confirmed receipt of '+a.imeis.length+' unit(s) from '+a.fromName);
+  renderGrid(visibleDevices());renderTable(visibleDevices());
+}
+function rejectAllocation(allocId){
+  const a=allAllocations.find(x=>x.id===allocId);
+  if(!a)return;
+  if(!confirm('Reject this allocation? The stock will be returned to the sender.'))return;
+  if(fbAllocations&&fbReady){
+    fbAllocations.child(allocId).update({rejected:true,rejectedAt:Date.now()});
+  }
+  // return devices to sender, clear in-transit state
+  a.imeis.forEach(imei=>{
+    fbUpdateDevice(imei,{holderUid:a.fromUid,holder:a.fromName,status:'allocated',pendingTo:null});
+  });
+  toast('Allocation rejected. Stock returned to sender.','var(--amber)');
+  fbLogAction('ALLOCATION_REJECTED',currentUser.name+' rejected allocation from '+a.fromName);
+  renderGrid(visibleDevices());renderTable(visibleDevices());
+}
+// ======================================================
+// PERFORMANCE CENTER — real numbers only, scoped per role.
+// Managers see ONLY their own Team Leader(s) and Agents ranked
+// against each other — never other managers or other teams.
+// With no sales recorded, everyone correctly shows UGX 0 / 0 units
+// rather than placeholder figures.
+// ======================================================
+function rankUsersByRevenue(list){
+  return list.map(u=>{
+    const sold=devices.filter(d=>d.soldByUid===u.uid&&d.status==='sold');
+    return {uid:u.uid,name:u.name,rev:sold.reduce((s,d)=>s+(d.soldPrice||0),0),units:sold.length};
+  }).sort((a,b)=>b.rev-a.rev);
+}
+function rankRowsHtml(ranked){
+  if(!ranked.length)return '<div class="xs muted">No one to rank yet.</div>';
+  const rankClass=i=>i===0?'r1':i===1?'r2':i===2?'r3':'r0';
+  return ranked.slice(0,8).map((r,i)=>`<div class="rank-row"><div class="rank-n ${rankClass(i)}">${i+1}</div><div style="flex:1"><div class="bold sm">${r.name}</div></div><div style="text-align:right"><div class="bold ${r.rev>0?'green':''} sm">UGX ${r.rev.toLocaleString()}</div><div class="xs muted">${r.units} unit${r.units===1?'':'s'}</div></div></div>`).join('');
+}
+function renderPerformancePage(){
+  const body=document.getElementById('performanceBody');
+  if(!body||!currentUser)return;
+  const role=currentUser.role;
+  const team=getVisibleUsers().filter(u=>u.uid!==currentUser.uid);
+  let panels='',chartTeam=[],chartTitle='Performance comparison';
+  if(role==='manager'){
+    const teamLeaders=team.filter(u=>u.role==='teamleader');
+    const agents=team.filter(u=>u.role==='agent');
+    panels=`<div class="g2 mb16">
+      <div class="card"><div class="hd2">Your best-selling Team Leader${teamLeaders.length===1?'':'s'}</div>${rankRowsHtml(rankUsersByRevenue(teamLeaders))}</div>
+      <div class="card"><div class="hd2">Your best-selling Agents</div>${rankRowsHtml(rankUsersByRevenue(agents))}</div>
+    </div>`;
+    chartTeam=[...teamLeaders,...agents];chartTitle='Your team performance comparison';
+  }else if(role==='teamleader'){
+    const agents=team.filter(u=>u.role==='agent');
+    panels=`<div class="card mb16"><div class="hd2">Your best-selling Agents</div>${rankRowsHtml(rankUsersByRevenue(agents))}</div>`;
+    chartTeam=agents;chartTitle='Your agents performance comparison';
+  }else if(role==='shopmanager'){
+    const staff=team.filter(u=>u.role==='shopstaff');
+    panels=`<div class="card mb16"><div class="hd2">Your best-selling Shop Staff</div>${rankRowsHtml(rankUsersByRevenue(staff))}</div>`;
+    chartTeam=staff;chartTitle='Your shop staff performance comparison';
+  }else{
+    // CEO, Admin, Regional Manager — company-wide (or region-wide) view
+    const managers=team.filter(u=>u.role==='manager');
+    const agents=team.filter(u=>u.role==='agent'||u.role==='shopowner');
+    panels=`<div class="g2 mb16">
+      <div class="card"><div class="hd2">Top managers</div>${rankRowsHtml(rankUsersByRevenue(managers))}</div>
+      <div class="card"><div class="hd2">Top agents</div>${rankRowsHtml(rankUsersByRevenue(agents))}</div>
+    </div>`;
+    chartTeam=managers;chartTitle='Manager performance comparison';
+  }
+  body.innerHTML=panels+`<div class="card"><div class="hd2">${chartTitle}</div><div class="ch h260"><canvas id="cPerf"></canvas></div></div>`;
+  setTimeout(()=>drawTeamComparison('cPerf',rankUsersByRevenue(chartTeam).filter(r=>r.units>0).slice(0,8)),0);
+}
+
+// ======================================================
+// PEER-TO-PEER STOCK ALLOCATION — Agent/Manager/Team Leader/Shop
+// Owner/Regional Manager can hand stock directly to another named
+// person of any role. Nothing moves until a Regional Manager, Admin,
+// or the CEO approves it — status is always pending, approved, or
+// rejected, and every request is emailed to the approvers.
+// ======================================================
+let peerAllocations=[];
+function connectPeerAllocations(){
+  if(!fbDb||!currentUser||!currentUser.companyId)return;
+  fbDb.ref('peerAllocations/'+currentUser.companyId).on('value',snap=>{
+    const val=snap.val()||{};
+    peerAllocations=Object.keys(val).map(key=>({id:key,...val[key]}));
+    if(document.getElementById('pg-mystock')?.classList.contains('on'))renderMyStockPage();
+    renderPeerAllocApprovals();
+  });
+}
+// Devices this person can actually hand off — only stock they
+// currently, physically hold, never someone else's.
+function myAllocatableDevices(){
+  return devices.filter(d=>d.holderUid===currentUser.uid&&d.status!=='sold'&&d.status!=='recovered'&&d.status!=='pending-peer-allocation'&&!d.hasIssue);
+}
+function openPeerAllocate(){
+  document.getElementById('peerAllocFrom').value=currentUser.name+' ('+currentUser.title+')';
+  document.getElementById('peerAllocRole').value='';
+  document.getElementById('peerAllocPerson').innerHTML='<option value="">Select role first</option>';
+  const brandSel=document.getElementById('peerAllocBrand');
+  const mine=myAllocatableDevices();
+  const brands=[...new Set(mine.map(d=>d.brand))];
+  brandSel.innerHTML='<option value="">Select brand</option>'+brands.map(b=>`<option value="${b}">${b}</option>`).join('');
+  document.getElementById('peerAllocModel').innerHTML='<option value="">Select brand first</option>';
+  document.getElementById('peerAllocVariant').innerHTML='<option value="">Select model first</option>';
+  document.getElementById('peerAllocImei').innerHTML='<option value="">Select storage/RAM first</option>';
+  document.getElementById('peerAllocPhoto').value='';
+  document.getElementById('peerAllocGpsText').textContent='Not captured yet';
+  document.getElementById('peerAllocGpsText').dataset.lat='';
+  document.getElementById('peerAllocGpsText').dataset.lng='';
+  if(mine.length===0){
+    toast("You don't currently hold any stock to allocate",'var(--amber)');
+    return;
+  }
+  openM('mPeerAllocate');
+}
+function populatePeerAllocPeople(){
+  const role=document.getElementById('peerAllocRole').value;
+  const sel=document.getElementById('peerAllocPerson');
+  if(!role){sel.innerHTML='<option value="">Select role first</option>';return}
+  // same company, same or wider role — never lets someone allocate to
+  // themselves, and never crosses into another company's people
+  const people=usersList.filter(u=>u.companyId===currentUser.companyId&&u.role===role&&u.uid!==currentUser.uid);
+  sel.innerHTML=people.length
+    ? people.map(u=>`<option value="${u.uid}">${u.name}</option>`).join('')
+    : '<option value="">No one with this role yet</option>';
+}
+function populatePeerAllocModels(){
+  const brand=document.getElementById('peerAllocBrand').value;
+  const sel=document.getElementById('peerAllocModel');
+  const mine=myAllocatableDevices().filter(d=>d.brand===brand);
+  const models=[...new Set(mine.map(d=>d.model))];
+  sel.innerHTML=brand?('<option value="">Select model</option>'+models.map(m=>`<option value="${m}">${m}</option>`).join('')):'<option value="">Select brand first</option>';
+  document.getElementById('peerAllocVariant').innerHTML='<option value="">Select model first</option>';
+  document.getElementById('peerAllocImei').innerHTML='<option value="">Select storage/RAM first</option>';
+}
+function populatePeerAllocVariants(){
+  const brand=document.getElementById('peerAllocBrand').value;
+  const model=document.getElementById('peerAllocModel').value;
+  const sel=document.getElementById('peerAllocVariant');
+  const mine=myAllocatableDevices().filter(d=>d.brand===brand&&d.model===model);
+  const variants=[...new Set(mine.map(d=>(d.storage||'—')+' / '+(d.ram||'—')))];
+  sel.innerHTML=model?('<option value="">Select storage / RAM</option>'+variants.map(v=>`<option value="${v}">${v}</option>`).join('')):'<option value="">Select model first</option>';
+  document.getElementById('peerAllocImei').innerHTML='<option value="">Select storage/RAM first</option>';
+}
+function populatePeerAllocImeis(){
+  const brand=document.getElementById('peerAllocBrand').value;
+  const model=document.getElementById('peerAllocModel').value;
+  const variant=document.getElementById('peerAllocVariant').value;
+  const sel=document.getElementById('peerAllocImei');
+  const mine=myAllocatableDevices().filter(d=>d.brand===brand&&d.model===model&&(d.storage||'—')+' / '+(d.ram||'—')===variant);
+  sel.innerHTML=variant?('<option value="">Select IMEI</option>'+mine.map(d=>`<option value="${d.imei}">${d.imei}${d.color?' — '+d.color:''}</option>`).join('')):'<option value="">Select storage/RAM first</option>';
+}
+function capturePeerAllocGPS(){
+  const label=document.getElementById('peerAllocGpsText');
+  if(!navigator.geolocation){
+    label.textContent='GPS not available on this device';
+    return;
+  }
+  label.textContent='Capturing...';
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const lat=pos.coords.latitude.toFixed(6),lng=pos.coords.longitude.toFixed(6);
+    label.textContent='Captured: '+lat+', '+lng;
+    label.dataset.lat=lat;label.dataset.lng=lng;
+  },err=>{
+    label.textContent='Could not get your location — check location permission.';
+  },{enableHighAccuracy:true,timeout:10000});
+}
+function submitPeerAllocation(){
+  const toRole=document.getElementById('peerAllocRole').value;
+  const toUid=document.getElementById('peerAllocPerson').value;
+  const toName=document.getElementById('peerAllocPerson').selectedOptions[0]?.textContent||'';
+  const imei=document.getElementById('peerAllocImei').value;
+  const photoFile=document.getElementById('peerAllocPhoto').files[0];
+  const gpsLabel=document.getElementById('peerAllocGpsText');
+  const err=document.getElementById('peerAllocErr');
+  err.classList.remove('show');
+  if(!toRole||!toUid){document.getElementById('peerAllocErrText').textContent='Choose who you are allocating to.';err.classList.add('show');return}
+  if(!imei){document.getElementById('peerAllocErrText').textContent='Choose the IMEI you are allocating.';err.classList.add('show');return}
+  const device=devices.find(d=>d.imei===imei);
+  if(!device){toast('Could not find that device','var(--red)');return}
+  const btn=document.getElementById('peerAllocSubmitBtn');
+  btn.disabled=true;btn.textContent='Sending...';
+  const finish=photoDataUrl=>{
+    const record={
+      imei:device.imei,brand:device.brand,model:device.model,storage:device.storage||'—',ram:device.ram||'—',
+      fromUid:currentUser.uid,fromName:currentUser.name,fromRole:currentUser.role,
+      toUid,toName,toRole,
+      photo:photoDataUrl||null,
+      gps:gpsLabel.dataset.lat?{lat:gpsLabel.dataset.lat,lng:gpsLabel.dataset.lng}:null,
+      status:'pending',requestedAt:Date.now()
+    };
+    fbUpdateDevice(imei,{status:'pending-peer-allocation'});
+    fbDb.ref('peerAllocations/'+currentUser.companyId).push(record).then(()=>{
+      btn.disabled=false;btn.textContent='Send for approval';
+      closeM('mPeerAllocate');
+      toast('Sent for approval. The device is held until a decision is made.');
+      fbLogAction('PEER_ALLOCATION_REQUESTED',currentUser.name+' requested to allocate '+device.brand+' '+device.model+' to '+toName);
+      notifyApproversOfAllocation(record);
+    }).catch(()=>{
+      btn.disabled=false;btn.textContent='Send for approval';
+      document.getElementById('peerAllocErrText').textContent='Could not submit. Please try again.';
+      err.classList.add('show');
+    });
+  };
+  if(photoFile){
+    const reader=new FileReader();
+    reader.onload=()=>finish(reader.result);
+    reader.onerror=()=>finish(null);
+    reader.readAsDataURL(photoFile);
+  }else{
+    finish(null);
+  }
+}
+// Opens the person's own mail client addressed to every Regional
+// Manager/Admin/CEO in the company, prefilled with the allocation
+// details — there's no backend mail server in this app, so this is
+// how "pops on email" works: it hands off to Mail/Gmail/Outlook with
+// everything already filled in, ready to send.
+function notifyApproversOfAllocation(record){
+  const approvers=usersList.filter(u=>u.companyId===currentUser.companyId&&['regionalmanager','admin','ceo'].includes(u.role)&&u.email);
+  if(approvers.length===0)return;
+  const to=approvers.map(a=>a.email).join(',');
+  const subject='Stock allocation needs approval — '+record.brand+' '+record.model;
+  const body=`A stock allocation is waiting for your approval.\n\nFrom: ${record.fromName}\nTo: ${record.toName} (${record.toRole})\nDevice: ${record.brand} ${record.model} — ${record.storage} / ${record.ram}\nIMEI: ${record.imei}\nRequested: ${new Date(record.requestedAt).toLocaleString()}${record.gps?'\nLocation: '+record.gps.lat+', '+record.gps.lng:''}\n\nApprove or reject it from your dashboard in Monalisa Stock ERP.`;
+  const url='mailto:'+encodeURIComponent(to)+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
+  window.open(url,'_blank');
+}
+// Only Regional Manager, Admin, or CEO can decide these — enforced
+// both here and by only ever rendering the approve/reject buttons for
+// those roles in the first place.
+function approvePeerAllocation(id){
+  if(!currentUser||!['regionalmanager','admin','ceo'].includes(currentUser.role)){
+    toast('Only a Regional Manager, Admin, or CEO can approve allocations','var(--red)');
+    return;
+  }
+  const a=peerAllocations.find(x=>x.id===id);
+  if(!a||a.status!=='pending')return;
+  fbUpdateDevice(a.imei,{status:'allocated',holderUid:a.toUid,holder:a.toName,allocatedAt:Date.now()});
+  fbDb.ref('peerAllocations/'+currentUser.companyId+'/'+id).update({status:'approved',decidedBy:currentUser.name,decidedAt:Date.now()}).then(()=>{
+    toast('Allocation approved — stock has moved to '+a.toName);
+    fbLogAction('PEER_ALLOCATION_APPROVED',currentUser.name+' approved allocation of '+a.brand+' '+a.model+' from '+a.fromName+' to '+a.toName);
+  });
+}
+function rejectPeerAllocation(id){
+  if(!currentUser||!['regionalmanager','admin','ceo'].includes(currentUser.role)){
+    toast('Only a Regional Manager, Admin, or CEO can reject allocations','var(--red)');
+    return;
+  }
+  const a=peerAllocations.find(x=>x.id===id);
+  if(!a||a.status!=='pending')return;
+  fbUpdateDevice(a.imei,{status:'allocated',holderUid:a.fromUid,holder:a.fromName});
+  fbDb.ref('peerAllocations/'+currentUser.companyId+'/'+id).update({status:'rejected',decidedBy:currentUser.name,decidedAt:Date.now()}).then(()=>{
+    toast('Allocation rejected. Stock stays with '+a.fromName,'var(--amber)');
+    fbLogAction('PEER_ALLOCATION_REJECTED',currentUser.name+' rejected allocation of '+a.brand+' '+a.model+' from '+a.fromName+' to '+a.toName);
+  });
+}
+// Renders the pending-approvals widget wherever a container with this
+// id exists on the current page — CEO/Admin/Regional Manager
+// dashboards each include one.
+function renderPeerAllocApprovals(){
+  const containers=document.querySelectorAll('.peerAllocApprovalsWidget');
+  if(!containers.length)return;
+  if(!currentUser||!['regionalmanager','admin','ceo'].includes(currentUser.role))return;
+  const scoped=currentUser.role==='regionalmanager'
+    ? peerAllocations.filter(a=>{
+        const teamUids=new Set(getVisibleUsers().map(u=>u.uid));
+        return teamUids.has(a.fromUid)||teamUids.has(a.toUid);
+      })
+    : peerAllocations;
+  const pending=scoped.filter(a=>a.status==='pending').sort((a,b)=>b.requestedAt-a.requestedAt);
+  const html=pending.length
+    ? `<div class="tw"><table><thead><tr><th>Device</th><th>From</th><th>To</th><th>Requested</th><th></th></tr></thead><tbody>${pending.map(a=>`
+        <tr><td class="bold">${a.brand} ${a.model}<div class="xs muted">${a.imei}</div></td><td>${a.fromName}</td><td>${a.toName} <span class="xs muted">(${a.toRole})</span></td><td class="xs muted">${new Date(a.requestedAt).toLocaleString()}</td>
+        <td><button class="btn btn-g btn-sm" onclick="approvePeerAllocation('${a.id}')"><i class="fas fa-check"></i></button> <button class="btn btn-danger btn-sm" onclick="rejectPeerAllocation('${a.id}')"><i class="fas fa-times"></i></button></td></tr>`).join('')}</tbody></table></div>`
+    : '<div class="xs muted">No pending allocations right now.</div>';
+  containers.forEach(c=>c.innerHTML=html);
+}
+
+// ======================================================
+// UNIFIED "STOCK" PAGE — Agent, Shop Owner, Manager, Team Leader
+// ======================================================
+function renderMyStockPage(){
+  const mine=myAllocatableDevices();
+  const aged=mine.filter(d=>d.age>20);
+  const issues=devices.filter(d=>d.holderUid===currentUser.uid&&d.hasIssue&&d.status!=='sold');
+  const pending=peerAllocations.filter(a=>a.status==='pending'&&(a.fromUid===currentUser.uid||a.toUid===currentUser.uid));
+  document.getElementById('msCurrentCount').textContent=mine.length;
+  document.getElementById('msAgedCount').textContent=aged.length;
+  document.getElementById('msIssueCount').textContent=issues.length;
+  document.getElementById('msPendingCount').textContent=pending.length;
+  const teamTab=document.getElementById('mystockTeamTabBtn');
+  if(teamTab)teamTab.style.display=['manager','teamleader'].includes(currentUser.role)?'inline-block':'none';
+  renderMyStockTab('current');
+}
+function renderMyStockTab(tab){
+  const body=document.getElementById('mystockBody');
+  if(!body)return;
+  if(tab==='current'){
+    const mine=myAllocatableDevices();
+    body.innerHTML=`<div class="card"><div class="tw"><table><thead><tr><th>IMEI</th><th>Brand</th><th>Model</th><th>Storage</th><th>RAM</th><th>Color</th><th>Days held</th></tr></thead><tbody>${
+      mine.length?mine.map(d=>`<tr><td class="bold xs">${d.imei}</td><td>${d.brand}</td><td>${d.model}</td><td>${d.storage||'—'}</td><td>${d.ram||'—'}</td><td>${d.color||'—'}</td><td><span class="age ${d.age>20?'age-r':d.age>9?'age-a':'age-g'}">${d.age||0}d</span></td></tr>`).join('')
+      :'<tr><td colspan="7" class="xs muted" style="text-align:center;padding:16px 0">You are not holding any stock right now.</td></tr>'
+    }</tbody></table></div></div>`;
+  }else if(tab==='team'){
+    body.innerHTML=renderMyStockTeamHtml();
+  }else if(tab==='history'){
+    const mine=peerAllocations.filter(a=>a.fromUid===currentUser.uid||a.toUid===currentUser.uid).sort((a,b)=>b.requestedAt-a.requestedAt);
+    const statusBadge=s=>s==='approved'?'<span class="badge b-g">Approved</span>':s==='rejected'?'<span class="badge b-r">Rejected</span>':'<span class="badge b-a">Pending</span>';
+    body.innerHTML=`<div class="card"><div class="tw"><table><thead><tr><th>Device</th><th>Direction</th><th>With</th><th>Requested</th><th>Decided</th><th>Status</th></tr></thead><tbody>${
+      mine.length?mine.map(a=>{
+        const outgoing=a.fromUid===currentUser.uid;
+        return `<tr><td class="bold">${a.brand} ${a.model}<div class="xs muted">${a.imei}</div></td><td>${outgoing?'<span class="badge b-b">Sent</span>':'<span class="badge b-g">Received</span>'}</td><td>${outgoing?a.toName:a.fromName}</td><td class="xs muted">${new Date(a.requestedAt).toLocaleString()}</td><td class="xs muted">${a.decidedAt?new Date(a.decidedAt).toLocaleString():'—'}</td><td>${statusBadge(a.status)}</td></tr>`;
+      }).join('')
+      :'<tr><td colspan="6" class="xs muted" style="text-align:center;padding:16px 0">No allocation movements yet.</td></tr>'
+    }</tbody></table></div></div>`;
+  }
+}
+// Manager: every Team Leader reporting to them, with that Team
+// Leader's own Agents nested underneath, and what each currently
+// holds. Team Leader: just their own Agents and what each holds.
+function renderMyStockTeamHtml(){
+  const sameCompany=usersList.filter(u=>u.companyId===currentUser.companyId);
+  const stockOf=uid=>devices.filter(d=>d.holderUid===uid&&d.status!=='sold'&&!d.hasIssue);
+  if(currentUser.role==='manager'){
+    const teamLeaders=sameCompany.filter(u=>u.reportsTo===currentUser.uid&&u.role==='teamleader');
+    if(!teamLeaders.length)return '<div class="xs muted">You have no Team Leaders yet.</div>';
+    return teamLeaders.map(tl=>{
+      const agents=sameCompany.filter(u=>u.reportsTo===tl.uid&&u.role==='agent');
+      const tlStock=stockOf(tl.uid);
+      return `<div class="card mb12"><div class="between mb8"><div class="bold">${tl.name} <span class="xs muted">Team Leader — holding ${tlStock.length}</span></div></div>
+        ${agents.length?`<div class="tw"><table><thead><tr><th>Agent</th><th>Holding</th><th>Aged 21+</th></tr></thead><tbody>${agents.map(a=>{const s=stockOf(a.uid);return `<tr><td>${a.name}</td><td class="bold">${s.length}</td><td class="${s.filter(d=>d.age>20).length?'red bold':''}">${s.filter(d=>d.age>20).length}</td></tr>`}).join('')}</tbody></table></div>`:'<div class="xs muted">No agents under this Team Leader yet.</div>'}
+      </div>`;
+    }).join('');
+  }
+  if(currentUser.role==='teamleader'){
+    const agents=sameCompany.filter(u=>u.reportsTo===currentUser.uid&&u.role==='agent');
+    if(!agents.length)return '<div class="xs muted">You have no Agents yet.</div>';
+    return `<div class="card"><div class="tw"><table><thead><tr><th>Agent</th><th>Holding</th><th>Aged 21+</th></tr></thead><tbody>${agents.map(a=>{const s=stockOf(a.uid);return `<tr><td>${a.name}</td><td class="bold">${s.length}</td><td class="${s.filter(d=>d.age>20).length?'red bold':''}">${s.filter(d=>d.age>20).length}</td></tr>`}).join('')}</tbody></table></div></div>`;
+  }
+  return '';
+}
+
+// ======================================================
+// RECOVERY DEPARTMENT — aged stock auto-feed + reported issues
+// ======================================================
+let issueReports=[];
+
+function fbWatchIssueReports(){
+  if(!fbDb||!currentUser||!currentUser.companyId)return;
+  fbDb.ref('issueReports/'+currentUser.companyId).on('value',snap=>{
+    const val=snap.val()||{};
+    issueReports=Object.keys(val).map(key=>({id:key,...val[key]}));
+    if(document.getElementById('pg-recovery')?.classList.contains('on')){
+      renderRecoveryQueue();
+    }
+  });
+}
+
+function doReportIssue(){
+  const deviceImei=document.getElementById('issueDeviceSelect').value;
+  const description=document.getElementById('issueDescription').value.trim();
+  const photoFiles=document.getElementById('issuePhotos').files;
+  const err=document.getElementById('issueErr');
+  err.classList.remove('show');
+
+  if(!deviceImei){
+    document.getElementById('issueErrText').textContent='Please select which device this is about.';
+    err.classList.add('show');
+    return;
+  }
+  if(!description){
+    document.getElementById('issueErrText').textContent='Please describe the issue.';
+    err.classList.add('show');
+    return;
+  }
+  const device=devices.find(d=>d.imei===deviceImei);
+  if(!device){toast('Could not find that device','var(--red)');return}
+
+  const btn=document.getElementById('issueSubmitBtn');
+  btn.disabled=true;btn.textContent='Submitting...';
+
+  const readAsBase64=file=>new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(reader.result);
+    reader.onerror=reject;
+    reader.readAsDataURL(file);
+  });
+  Promise.all(Array.from(photoFiles).map(readAsBase64)).then(photos=>{
+    const report={
+      imei:device.imei,brand:device.brand,model:device.model,
+      reportedBy:currentUser.name,reportedByUid:currentUser.uid,reportedByRole:currentUser.role,
+      description,photos,reportedAt:Date.now(),status:'open'
+    };
+    return fbDb.ref('issueReports/'+currentUser.companyId).push(report);
+  }).then(()=>{
+    fbUpdateDevice(deviceImei,{hasIssue:true,issueStatus:'open'});
+    btn.disabled=false;btn.textContent='Submit report';
+    closeM('mReportIssue');
+    toast('Issue reported. Recovery has been notified.');
+    fbLogAction('ISSUE_REPORTED',currentUser.name+' reported an issue with '+device.brand+' '+device.model+' ('+deviceImei+')');
+  }).catch(e=>{
+    btn.disabled=false;btn.textContent='Submit report';
+    document.getElementById('issueErrText').textContent='Could not submit. Please try again.';
+    err.classList.add('show');
+  });
+}
+
+function populateIssueDeviceSelect(){
+  const sel=document.getElementById('issueDeviceSelect');
+  if(!sel)return;
+  const mine=(currentUser.role==='ceo'||currentUser.role==='admin')
+    ? devices.filter(d=>d.status!=='sold'&&!d.hasIssue)
+    : devices.filter(d=>d.holderUid===currentUser.uid&&d.status!=='sold'&&!d.hasIssue);
+  sel.innerHTML=mine.length
+    ? mine.map(d=>`<option value="${d.imei}">${d.brand} ${d.model} — ${d.imei}</option>`).join('')
+    : '<option value="">You have no devices to report</option>';
+}
+
+// the recovery queue is built entirely from real data — it can never
+// show healthy, active stock, only what's actually aged or reported
+function renderRecoveryQueue(which){
+  which=which||document.querySelector('#recoveryTabs .tab.on')?.textContent.toLowerCase().includes('issue')?'issues':
+        document.querySelector('#recoveryTabs .tab.on')?.textContent.toLowerCase().includes('recovered')?'done':'aged';
+  const wrap=document.getElementById('recoveryQueueList');
+  if(!wrap)return;
+
+  const myCompanyDevices=devices.filter(d=>d.companyId===currentUser.companyId||!d.companyId); // tolerate legacy rows without companyId
+  // CEO/Admin see every case in the company. Everyone else — Manager,
+  // Team Leader, Agent, Shop Owner, Shop Manager, Regional Manager —
+  // only sees aged/recovered stock and issue reports tied to their own
+  // team, per instruction. "Aged" is scoped by who currently holds the
+  // device; "recovered" is scoped by who it was recovered FROM (since
+  // a recovered device no longer has a holder); "issues" by who filed
+  // the report.
+  const isTopTier=currentUser.role==='ceo'||currentUser.role==='admin';
+  const myTeamUids=new Set(getVisibleUsers().map(u=>u.uid));
+  myTeamUids.add(currentUser.uid);
+  const scoped=isTopTier?myCompanyDevices:myCompanyDevices.filter(d=>myTeamUids.has(d.holderUid));
+  const aged=scoped.filter(isInRecoveryPhase);
+  const recoveredAll=myCompanyDevices.filter(d=>d.status==='recovered');
+  const recovered=isTopTier?recoveredAll:recoveredAll.filter(d=>myTeamUids.has(d.recoveredFromUid));
+  const openIssuesAll=issueReports.filter(r=>r.status==='open');
+  const openIssues=isTopTier?openIssuesAll:openIssuesAll.filter(r=>myTeamUids.has(r.reportedByUid));
+
+  // update the stats row regardless of which tab is active
+  document.getElementById('recoActiveCount').textContent=aged.length;
+  const now=Date.now();
+  const startOfToday=new Date();startOfToday.setHours(0,0,0,0);
+  const startOfYesterday=new Date(startOfToday);startOfYesterday.setDate(startOfYesterday.getDate()-1);
+  const startOfWeek=new Date(startOfToday);startOfWeek.setDate(startOfWeek.getDate()-startOfWeek.getDay());
+  const startOfMonth=new Date(startOfToday.getFullYear(),startOfToday.getMonth(),1);
+  const threeMonthsAgo=new Date(startOfToday);threeMonthsAgo.setMonth(threeMonthsAgo.getMonth()-3);
+  const recoveredAt=d=>d.recoveredAt||0;
+  document.getElementById('recoToday').textContent=recovered.filter(d=>recoveredAt(d)>=startOfToday.getTime()).length;
+  document.getElementById('recoYesterday').textContent=recovered.filter(d=>recoveredAt(d)>=startOfYesterday.getTime()&&recoveredAt(d)<startOfToday.getTime()).length;
+  document.getElementById('recoWeek').textContent=recovered.filter(d=>recoveredAt(d)>=startOfWeek.getTime()).length;
+  document.getElementById('recoMonth').textContent=recovered.filter(d=>recoveredAt(d)>=startOfMonth.getTime()).length;
+  const recoThreeEl=document.getElementById('recoThreeMonths');
+  if(recoThreeEl)recoThreeEl.textContent=recovered.filter(d=>recoveredAt(d)>=threeMonthsAgo.getTime()).length;
+
+  if(which==='aged'){
+    wrap.innerHTML=aged.length?aged.map(d=>`
+      <div class="rcard">
+        <div class="rcard-head"><div><div class="bold">${d.brand} ${d.model}</div><div class="mono mt4">${d.imei}</div></div><span class="age age-r">${d.age} days</span></div>
+        <div class="rcard-meta"><span><i class="fas fa-user"></i> ${d.holder||'Unknown'}</span><span><i class="fas fa-map-marker-alt"></i> ${d.loc||'—'}</span></div>
+        <div class="row"><button class="btn btn-g btn-sm" onclick="markRecoveredReal('${d.imei}')"><i class="fas fa-check"></i>Mark recovered</button><button class="btn btn-wa btn-sm" onclick="alertRecoveryWA('${d.brand} ${d.model}','${d.imei}','${d.holder}','${d.age}')"><i class="fab fa-whatsapp"></i>Alert CEO</button></div>
+      </div>`).join(''):'<div class="card"><div class="xs muted" style="text-align:center;padding:16px 0">No aged stock right now — everything is within policy.</div></div>';
+  }else if(which==='issues'){
+    wrap.innerHTML=openIssues.length?openIssues.map(r=>`
+      <div class="rcard warn">
+        <div class="rcard-head"><div><div class="bold">${r.brand} ${r.model}</div><div class="mono mt4">${r.imei}</div></div><span class="badge b-a">Reported issue</span></div>
+        <div class="rcard-meta"><span><i class="fas fa-user"></i> ${r.reportedBy} (${roleLabels[r.reportedByRole]||r.reportedByRole})</span><span><i class="fas fa-clock"></i> ${new Date(r.reportedAt).toLocaleString()}</span></div>
+        <div class="xs mb10">${r.description}</div>
+        ${r.photos&&r.photos.length?`<div class="row mb10" style="flex-wrap:wrap">${r.photos.map(p=>`<img src="${p}" style="width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid var(--border2)">`).join('')}</div>`:''}
+        <div class="row"><button class="btn btn-g btn-sm" onclick="markRecoveredReal('${r.imei}',true)"><i class="fas fa-check"></i>Mark recovered</button></div>
+      </div>`).join(''):'<div class="card"><div class="xs muted" style="text-align:center;padding:16px 0">No open issue reports.</div></div>';
+  }else{
+    wrap.innerHTML=recovered.length?recovered.slice(0,20).map(d=>`
+      <div class="rcard done">
+        <div class="rcard-head"><div><div class="bold">${d.brand} ${d.model}</div><div class="mono mt4">${d.imei}</div></div><span class="badge b-g">Recovered</span></div>
+        <div class="xs green">Recovered ${d.recoveredAt?new Date(d.recoveredAt).toLocaleString():''} by ${d.recoveredBy||'—'}</div>
+      </div>`).join(''):'<div class="card"><div class="xs muted" style="text-align:center;padding:16px 0">Nothing recovered yet.</div></div>';
+  }
+}
+
+function scopedRecoveredDevices(){
+  const myCompanyDevices=devices.filter(d=>d.companyId===currentUser.companyId||!d.companyId);
+  const isTopTier=currentUser.role==='ceo'||currentUser.role==='admin';
+  const recoveredAll=myCompanyDevices.filter(d=>d.status==='recovered');
+  if(isTopTier)return recoveredAll;
+  const myTeamUids=new Set(getVisibleUsers().map(u=>u.uid));
+  myTeamUids.add(currentUser.uid);
+  return recoveredAll.filter(d=>myTeamUids.has(d.recoveredFromUid));
+}
+function exportRecoveredStockExcel(){
+  const list=scopedRecoveredDevices();
+  if(!list.length){toast('No recovered stock to export yet','var(--amber)');return}
+  try{
+    const rows=list.map(d=>({
+      'Date Recovered':d.recoveredAt?new Date(d.recoveredAt).toLocaleDateString():'—',
+      'Time Recovered':d.recoveredAt?new Date(d.recoveredAt).toLocaleTimeString():'—',
+      'IMEI':d.imei,'Brand':d.brand,'Model':d.model,
+      'Recovered From':d.recoveredFromName||'—','Recovered By':d.recoveredBy||'—'
+    }));
+    const ws=XLSX.utils.json_to_sheet(rows);
+    ws['!cols']=[{wch:14},{wch:12},{wch:17},{wch:12},{wch:18},{wch:20},{wch:18}];
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'Recovered Stock');
+    XLSX.writeFile(wb,'recovered-stock-'+new Date().toISOString().slice(0,10)+'.xlsx');
+    toast('Excel file downloaded');
+    fbLogAction('EXPORT_EXCEL',currentUser.name+' exported recovered stock report');
+  }catch(e){
+    console.error(e);
+    toast('Could not generate the Excel file. Try again.','var(--red)');
+  }
+}
+function markRecoveredReal(imei,fromIssue){
+  const device=devices.find(d=>d.imei===imei);
+  if(!device)return;
+  // recovering a device removes it from whoever held it and returns it
+  // to CEO master inventory — it stops appearing for that Agent/Manager/
+  // Team Leader/Shop Owner immediately, everywhere, automatically.
+  // recoveredFromUid/Name preserve WHO it came from, since holderUid is
+  // about to be cleared — this is what lets Managers/Team Leaders/
+  // Agents still see this case under "recovered" for their own team.
+  fbUpdateDevice(imei,{
+    status:'recovered',holderUid:'',holder:'CEO Stock (recovered)',
+    recoveredFromUid:device.holderUid||'',recoveredFromName:device.holder||'',
+    recoveredAt:Date.now(),recoveredBy:currentUser.name,age:0,hasIssue:false,issueStatus:null
+  });
+  if(fromIssue){
+    const report=issueReports.find(r=>r.imei===imei&&r.status==='open');
+    if(report)fbDb.ref('issueReports/'+currentUser.companyId+'/'+report.id).update({status:'resolved',resolvedAt:Date.now(),resolvedBy:currentUser.name});
+  }
+  toast('Device recovered and returned to CEO inventory.');
+  fbLogAction('RECOVERY_COMPLETE',currentUser.name+' recovered '+device.brand+' '+device.model+' ('+imei+')');
+  renderRecoveryQueue();
+  renderGrid(visibleDevices());renderTable(visibleDevices());
+}
+
+// ======================================================
+// COMMISSIONS PAGE — real data, scoped by who's allowed to see whom
+// ======================================================
+let allCommissions=[];
+function loadCommissionsPage(){
+  if(!currentUser||!currentUser.companyId)return;
+  fbDb.ref('commissions/'+currentUser.companyId).on('value',snap=>{
+    const val=snap.val()||{};
+    allCommissions=Object.keys(val).map(key=>({id:key,...val[key]}));
+    if(document.getElementById('pg-commissions')?.classList.contains('on')){
+      renderCommissions('all');
+    }
+  });
+}
+function myVisibleCommissions(){
+  if(currentUser.role==='ceo'||currentUser.role==='admin')return allCommissions;
+  const visibleUids=new Set(getVisibleUsers().map(u=>u.uid));
+  visibleUids.add(currentUser.uid);
+  return allCommissions.filter(c=>visibleUids.has(c.uid));
+}
+function renderCommissions(filter){
+  const list=myVisibleCommissions().filter(c=>filter==='all'||c.kind===filter).sort((a,b)=>b.createdAt-a.createdAt);
+  const tb=document.getElementById('commissionsTbody');
+  const total=list.reduce((s,c)=>s+c.amount,0);
+  const pending=list.filter(c=>c.status==='pending').reduce((s,c)=>s+c.amount,0);
+  const paid=list.filter(c=>c.status==='paid').reduce((s,c)=>s+c.amount,0);
+  document.getElementById('commTotalEarned').textContent='UGX '+(total/1000).toFixed(0)+'K';
+  document.getElementById('commPending').textContent='UGX '+(pending/1000).toFixed(0)+'K';
+  document.getElementById('commPaid').textContent='UGX '+(paid/1000).toFixed(0)+'K';
+  document.getElementById('commCount').textContent=list.length;
+
+  const canMarkPaid=currentUser.role==='ceo'||currentUser.role==='admin';
+  tb.innerHTML=list.length?list.map(c=>`
+    <tr>
+      <td class="bold">${c.name}</td>
+      <td><span class="badge b-b">${roleLabels[c.role]||c.role}</span></td>
+      <td>${c.deviceBrand} ${c.deviceModel}</td>
+      <td><span class="badge ${c.kind==='direct'?'b-g':c.kind==='cumulative'?'b-v':'b-a'}">${c.kind}${c.fromSaleBy?' (from '+c.fromSaleBy+')':''}</span></td>
+      <td class="bold green">${c.amount.toLocaleString()}</td>
+      <td class="xs muted">${new Date(c.createdAt).toLocaleDateString()}</td>
+      <td><span class="badge ${c.status==='paid'?'b-g':'b-a'}">${c.status}</span></td>
+      <td>${canMarkPaid&&c.status==='pending'?`<button class="btn btn-g btn-sm" onclick="markCommissionPaid('${c.id}')">Mark paid</button>`:''}</td>
+    </tr>`).join(''):'<tr><td colspan="8" class="xs muted" style="text-align:center;padding:20px">No commissions recorded yet.</td></tr>';
+}
+function markCommissionPaid(id){
+  fbDb.ref('commissions/'+currentUser.companyId+'/'+id).update({status:'paid',paidAt:Date.now(),paidBy:currentUser.name}).then(()=>{
+    toast('Commission marked as paid');
+    fbLogAction('COMMISSION_PAID',currentUser.name+' marked a commission as paid');
+  }).catch(()=>toast('Could not update — check your permissions','var(--red)'));
+}
+
+function doCreateUser(){
+  const name=document.getElementById('nuName').value.trim();
+  const email=document.getElementById('nuEmail').value.trim();
+  const pass=document.getElementById('nuPass').value.trim();
+  const roleVal=document.getElementById('nuRole').value;
+  const age=document.getElementById('nuAge').value.trim();
+  const reportsToUid=document.getElementById('nuReportsTo').value;
+  const phone=document.getElementById('nuPhone').value.trim();
+  const country=document.getElementById('nuCountry').value.trim();
+  const region=document.getElementById('nuRegion').value.trim();
+  const district=document.getElementById('nuDistrict').value.trim();
+  const subCounty=document.getElementById('nuSubCounty').value.trim();
+  const parish=document.getElementById('nuParish').value.trim();
+  const village=document.getElementById('nuVillage').value.trim();
+  const idFrontFile=document.getElementById('nuIdFront').files[0];
+  const idBackFile=document.getElementById('nuIdBack').files[0];
+  const err=document.getElementById('createUserErr');
+  const btn=document.getElementById('createUserSubmitBtn');
+  err.classList.remove('show');
+
+  if(!name||!email||!pass){
+    document.getElementById('createUserErrText').textContent='Please fill in name, email and a password.';
+    err.classList.add('show');
+    return;
+  }
+  if(pass.length<6){
+    document.getElementById('createUserErrText').textContent='Password must be at least 6 characters.';
+    err.classList.add('show');
+    return;
+  }
+  if(!age||parseInt(age)<18){
+    document.getElementById('createUserErrText').textContent='Age is required and must be 18 or older.';
+    err.classList.add('show');
+    return;
+  }
+  if(!reportsToUid){
+    document.getElementById('createUserErrText').textContent='Please choose who this person reports to.';
+    err.classList.add('show');
+    return;
+  }
+  const allowedRolesShop={
+    ceo:['admin','shopmanager','shopstaff','recovery'],
+    admin:['shopmanager','shopstaff','recovery'],
+    shopmanager:['shopstaff'],
+  };
+  const allowedRolesDistribution={
+    ceo:['admin','regionalmanager','manager','teamleader','agent','shopowner','recovery'],
+    admin:['manager','teamleader','agent','shopowner','recovery'],
+    regionalmanager:['manager'],
+    manager:['agent'],
+    teamleader:['agent'],
+  };
+  const allowedRoles=currentUser.businessModel==='shop'?allowedRolesShop:allowedRolesDistribution;
+  if(!(allowedRoles[currentUser.role]||[]).includes(roleVal)){
+    document.getElementById('createUserErrText').textContent='Your role cannot create a login of that type.';
+    err.classList.add('show');
+    return;
+  }
+
+  // Shop key: Shop Staff and Shop Managers must be tied to a specific
+  // physical shop, so their stock and sales are tracked per shop.
+  let shopKey=null;
+  if(roleVal==='shopstaff'||roleVal==='shopmanager'){
+    shopKey=document.getElementById('nuShopKey').value;
+    if(!shopKey){
+      document.getElementById('createUserErrText').textContent='Please select which shop this person works at.';
+      err.classList.add('show');
+      return;
+    }
+  }
+
+  // Team name: Managers and Team Leaders get an explicit name typed in
+  // by whoever creates them. Agents and Shop Owners never type one —
+  // they automatically inherit the team name of whoever they report to,
+  // so there's no possibility of overlap or mismatch.
+  let teamName=null;
+  if(roleVal==='manager'||roleVal==='teamleader'){
+    teamName=document.getElementById('nuTeamName').value.trim();
+    if(!teamName){
+      document.getElementById('createUserErrText').textContent='Please give this '+(roleVal==='manager'?'Manager':'Team Leader')+' a team name.';
+      err.classList.add('show');
+      return;
+    }
+  }else if(roleVal==='agent'){
+    const boss=usersList.find(u=>u.uid===reportsToUid);
+    teamName=boss?(boss.teamName||null):null;
+  }
+
+  const assignedRegion=document.getElementById('nuAssignedRegion')?.value||null;
+  const monthlyPay=document.getElementById('nuMonthlyPay')?.value||null;
+  const contractNotes=document.getElementById('nuContractNotes')?.value.trim()||null;
+
+  btn.disabled=true;
+  btn.textContent='Creating...';
+
+  // National ID photos: read as base64 and store directly in the
+  // database record. This keeps everything working without adding a
+  // separate file-storage integration for now. Honest limitation: this
+  // is fine for occasional ID photos at this scale, but isn't the
+  // long-term right answer if this grows to thousands of users with
+  // large images — Firebase Storage would be the proper home for that
+  // once this is confirmed working end to end.
+  const readAsBase64=file=>new Promise((resolve,reject)=>{
+    if(!file){resolve(null);return}
+    const reader=new FileReader();
+    reader.onload=()=>resolve(reader.result);
+    reader.onerror=reject;
+    reader.readAsDataURL(file);
+  });
+
+  Promise.all([readAsBase64(idFrontFile),readAsBase64(idBackFile)]).then(([idFrontData,idBackData])=>{
+    // Use a secondary, isolated Firebase app instance so creating this
+    // account does NOT sign the current CEO/Admin out of their own session.
+    let secondaryApp;
+    try{
+      secondaryApp=firebase.apps.find(a=>a.name==='Secondary')||firebase.initializeApp(firebaseConfig,'Secondary');
+    }catch(e){
+      secondaryApp=firebase.app('Secondary');
+    }
+    const secondaryAuth=secondaryApp.auth();
+
+    return secondaryAuth.createUserWithEmailAndPassword(email,pass).then(cred=>{
+      const uid=cred.user.uid;
+      return fbDb.ref('users/'+uid).set({
+        name,email,role:roleVal,title:roleLabels[roleVal]||roleVal,
+        reportsTo:reportsToUid,companyId:currentUser.companyId,businessModel:currentUser.businessModel||'distribution',
+        age:parseInt(age),phone,
+        teamName:teamName,shopKey:shopKey,
+        assignedRegion:roleVal==='regionalmanager'?assignedRegion:null,
+        monthlyPay:roleVal==='regionalmanager'?(monthlyPay?parseInt(monthlyPay):null):null,
+        contractNotes:roleVal==='regionalmanager'?contractNotes:null,
+        location:{country:country||'Uganda',region,district,subCounty,parish,village},
+        nationalIdFront:idFrontData||null,nationalIdBack:idBackData||null,
+        joined:new Date().toLocaleDateString(),status:'Active',createdAt:Date.now(),createdBy:currentUser.uid,
+        lastActiveAt:Date.now()
+      }).then(()=>secondaryAuth.signOut());
+    });
+  }).then(()=>{
+    btn.disabled=false;
+    btn.textContent='Create login';
+    closeM('mCreateUser');
+    toast('Login created for '+name+'. Share the password before it\'s forgotten.');
+    fbLogAction('USER_CREATED',currentUser.name+' created a login for '+name+' as '+(roleLabels[roleVal]||roleVal));
+    renderUsersFromDb();
+  }).catch(e=>{
+    btn.disabled=false;
+    btn.textContent='Create login';
+    document.getElementById('createUserErrText').textContent=friendlyAuthError(e);
+    err.classList.add('show');
+  });
+}
+function doAddDevice(){
+  const brandEl=document.querySelector('#mAddDevice select');
+  const modelEl=document.querySelectorAll('#mAddDevice .inp')[1];
+  const imeiInputs=document.querySelectorAll('#mAddDevice input.inp');
+  let imei='', model='', brand='', buy=0, sell=0, color='';
+  document.querySelectorAll('#mAddDevice .fg').forEach(fg=>{
+    const lbl=fg.querySelector('.lbl')?.textContent||'';
+    const input=fg.querySelector('input,select');
+    if(!input)return;
+    if(lbl.includes('Model'))model=input.value;
+    if(lbl.includes('Brand'))brand=input.value;
+    if(lbl.includes('Color'))color=input.value;
+    if(lbl.includes('IMEI'))imei=input.value;
+    if(lbl.includes('Purchase'))buy=parseInt(input.value)||0;
+    if(lbl.includes('Selling'))sell=parseInt(input.value)||0;
+  });
+  if(!imei||imei.length<5){
+    toast('Please enter a valid IMEI','var(--red)');
+    return;
+  }
+  if(devices.some(d=>d.imei===imei)){
+    toast('That IMEI already exists in inventory','var(--red)');
+    return;
+  }
+  const dest=document.getElementById('addDevDest').value;
+  const goesToCeo=dest.includes('CEO');
+  const newDevice={brand:brand||'Samsung',model:model||'New device',ram:'-',storage:'-',color:color||'-',imei,buy:buy||0,sell:sell||0,holder:goesToCeo?'CEO Stock':(currentUser.name),holderUid:goesToCeo?'':currentUser.uid,loc:goesToCeo?'CEO Warehouse':(currentUser.district||'Uganda'),age:0,status:goesToCeo?'ceo':'allocated'};
+  fbAddDevice(newDevice);
+  renderGrid(visibleDevices());renderTable(visibleDevices());
+  closeM('mAddDevice');
+  toast('Device added — '+dest);
+  fbLogAction('STOCK_ADDED',brand+' '+model+' ('+imei+') added by '+currentUser.name);
+}
+function doAddCustomer(){
+  const name=document.getElementById('custName').value.trim();
+  const phone=document.getElementById('custPhone').value.trim();
+  const nid=document.getElementById('custNid').value.trim();
+  const district=document.getElementById('custDistrictAdd').value;
+  const village=document.getElementById('custVillage').value.trim();
+  if(!name||!phone){
+    toast('Please enter the customer\'s name and phone number','var(--red)');
+    return;
+  }
+  const newCustomer={name,phone,nid:nid||'—',district,village:village||'—',agent:currentUser.name,agentUid:currentUser.uid,purchases:0,last:'—'};
+  fbAddCustomer(newCustomer);
+  renderCustomers(visibleCustomers());
+  closeM('mAddCustomer');
+  toast('Customer added');
+  fbLogAction('CUSTOMER_ADDED',currentUser.name+' added customer '+name);
+}
+// ======================================================
+// COMMISSION ENGINE — fires automatically on every sale
+// ======================================================
+// Two kinds of payment, exactly as specified:
+//  1. Direct commission: paid to whoever physically made the sale
+//     (Agent, Shop Owner, or a Manager/Team Leader selling personally)
+//  2. Cumulative commission: paid automatically to a Team Leader for
+//     every sale made by their Agents, and to a Manager for every
+//     sale made anywhere in their downline — instantly, no schedule
+function brandOverrideFor(brand){
+  const match=Object.values(companyBrands||{}).find(b=>b.name===brand);
+  return (match&&match.fixedCommission!=null&&match.fixedCommission!=='')?parseInt(match.fixedCommission):null;
+}
+
+function processCommissionsForSale(device,salePrice){
+  if(!currentUser.companyId)return;
+  const rates=companySettings.commissionRates||{};
+  const bonus=companySettings.bonusCommission||{enabled:false,agent:0,leader:0};
+  const seller=currentUser;
+  const records=[];
+
+  // 1. DIRECT commission for whoever made the sale
+  const override=brandOverrideFor(device.brand);
+  let directAmount=0;
+  if(seller.role==='agent'||seller.role==='shopowner'){
+    directAmount=override!=null?override:(rates[seller.role]||0);
+  }else if(seller.role==='manager'||seller.role==='teamleader'){
+    // a Manager or Team Leader selling personally still earns the
+    // same direct amount an Agent would, per your instruction that
+    // they're allowed to sell and should be paid for it
+    directAmount=override!=null?override:(rates.agent||0);
+  }
+  if(directAmount>0){
+    records.push({uid:seller.uid,name:seller.name,role:seller.role,kind:'direct',amount:directAmount});
+  }
+  if(bonus.enabled&&bonus.agent>0&&(seller.role==='agent'||seller.role==='shopowner')){
+    records.push({uid:seller.uid,name:seller.name,role:seller.role,kind:'bonus',amount:bonus.agent});
+  }
+
+  // 2. CUMULATIVE commission up the chain — find the seller's Team
+  // Leader (if any) and that Team Leader's Manager (if any), and
+  // credit each one automatically.
+  const sellerProfile=usersList.find(u=>u.uid===seller.uid);
+  let teamLeader=null,manager=null;
+  if(sellerProfile){
+    if(sellerProfile.role==='agent'){
+      const boss=usersList.find(u=>u.uid===sellerProfile.reportsTo);
+      if(boss&&boss.role==='teamleader')teamLeader=boss;
+      else if(boss&&boss.role==='manager')manager=boss; // agent reporting straight to a manager, no TL in between
+    }else if(sellerProfile.role==='teamleader'){
+      const boss=usersList.find(u=>u.uid===sellerProfile.reportsTo);
+      if(boss&&boss.role==='manager')manager=boss;
+    }
+    if(teamLeader&&!manager){
+      const boss=usersList.find(u=>u.uid===teamLeader.reportsTo);
+      if(boss&&boss.role==='manager')manager=boss;
+    }
+  }
+  if(teamLeader&&rates.teamleaderCumulative>0){
+    records.push({uid:teamLeader.uid,name:teamLeader.name,role:'teamleader',kind:'cumulative',amount:rates.teamleaderCumulative,fromSaleBy:seller.name});
+    if(bonus.enabled&&bonus.leader>0){
+      records.push({uid:teamLeader.uid,name:teamLeader.name,role:'teamleader',kind:'bonus',amount:bonus.leader});
+    }
+  }
+  if(manager&&rates.managerCumulative>0){
+    records.push({uid:manager.uid,name:manager.name,role:'manager',kind:'cumulative',amount:rates.managerCumulative,fromSaleBy:seller.name});
+    if(bonus.enabled&&bonus.leader>0){
+      records.push({uid:manager.uid,name:manager.name,role:'manager',kind:'bonus',amount:bonus.leader});
+    }
+  }
+
+  records.forEach(r=>{
+    fbDb.ref('commissions/'+currentUser.companyId).push({
+      ...r,deviceImei:device.imei,deviceBrand:device.brand,deviceModel:device.model,
+      salePrice,createdAt:Date.now(),status:'pending'
+    });
+  });
+}
+
+function doSale(){
+  const custName=document.getElementById('saleCustName').value.trim();
+  const custPhone=document.getElementById('saleCustPhone').value.trim();
+  const custNid=document.getElementById('saleCustNid')?.value.trim()||'';
+  const price=document.getElementById('salePrice').value.trim();
+  const imei=document.getElementById('saleIMEI').value;
+  const saleType=document.querySelector('input[name="st"]:checked')?.value||'cash';
+  if(!custName||!custPhone){
+    toast('Please enter the customer name and phone','var(--red)');
+    return;
+  }
+  if(!price||isNaN(price)||parseInt(price)<=0){
+    toast('Please enter a valid selling price','var(--red)');
+    return;
+  }
+  if(!imei){
+    toast('Select a device to sell','var(--red)');
+    return;
+  }
+  const device=devices.find(d=>d.imei===imei);
+  if(!device){
+    toast('Could not find that device','var(--red)');
+    return;
+  }
+  // mark the device as sold and remove it from active inventory views
+  fbUpdateDevice(imei,{status:'sold',soldTo:custName,soldAt:Date.now(),soldPrice:parseInt(price),soldBy:currentUser.name,soldByUid:currentUser.uid});
+
+  // calculate and record every commission this sale triggers — direct
+  // commission for whoever sold it, plus cumulative commission for
+  // their Team Leader and Manager, all instantly, no separate step
+  processCommissionsForSale(device,parseInt(price));
+
+  // find or create the customer, and bump their purchase count. If
+  // anyone other than CEO/Admin made this sale, the customer starts
+  // pending — it only "reflects" in the Customers section for their
+  // team once CEO/Admin approves it, per instruction.
+  const isAutoApproved=currentUser.role==='ceo'||currentUser.role==='admin';
+  let cust=customers.find(c=>c.phone===custPhone);
+  if(cust){
+    cust.purchases=(cust.purchases||0)+1;
+    cust.last=new Date().toLocaleDateString();
+    if(fbCustomers&&fbReady&&cust._key)fbCustomers.child(cust._key).update({purchases:cust.purchases,last:cust.last});
+  }else{
+    const newCust={name:custName,phone:custPhone,nid:custNid||'—',district:currentUser.district||'Kampala',village:'—',agent:currentUser.name,agentUid:currentUser.uid,purchases:1,last:new Date().toLocaleDateString(),approvalStatus:isAutoApproved?'approved':'pending'};
+    fbAddCustomer(newCust);
+  }
+
+  const receiptNr='RCP-'+new Date().toISOString().slice(0,10).replace(/-/g,'')+'-'+Math.floor(Math.random()*9000+1000);
+  const saleTypeLabel=saleType==='finance'?'Financed sale':'Cash sale';
+  const newReceiptId=saveReceiptRecord(receiptNr,device,custName,custPhone,custNid,saleTypeLabel,parseInt(price));
+  loadReceiptInto(receiptNr,custName,custPhone,custNid||'—',currentUser.name,device.brand,device.model,(device.ram&&device.ram!=='-'?device.ram+' / '+device.storage:'—'),device.color||'—',imei,saleTypeLabel,parseInt(price),newReceiptId);
+
+  closeM('mNewSale');
+  toast('Sale recorded for '+custName+'. Receipt generated.');
+  fbLogAction('SALE',currentUser.name+' sold '+device.brand+' '+device.model+' to '+custName+' for UGX '+parseInt(price).toLocaleString());
+  renderGrid(visibleDevices());renderTable(visibleDevices());
+  go('sales');
+}
+function doSendAlloc(){
+  const toUid=document.getElementById('allocTo').value;
+  const toName=document.getElementById('allocTo').selectedOptions[0]?.textContent||'recipient';
+  const checkedBoxes=document.querySelectorAll('#allocList input:checked');
+  if(!toUid){
+    toast('Choose who you are allocating to','var(--red)');
+    return;
+  }
+  if(checkedBoxes.length===0){
+    toast('Select at least one IMEI to allocate','var(--red)');
+    return;
+  }
+  const imeis=Array.from(checkedBoxes).map(cb=>cb.value);
+  const allocId='alloc_'+Date.now();
+  const allocation={
+    id:allocId,
+    fromUid:currentUser.uid,fromName:currentUser.name,
+    toUid,toName,
+    imeis,
+    sentAt:Date.now(),
+    confirmed:false
+  };
+  if(fbAllocations&&fbReady){
+    fbAllocations.child(allocId).set(allocation);
+  }
+  // mark these devices as "in transit" immediately so they don't show as
+  // available to allocate again while the recipient hasn't confirmed yet
+  imeis.forEach(imei=>fbUpdateDevice(imei,{status:'in_transit',pendingTo:toUid}));
+  closeM('mAllocate');
+  toast(checkedBoxes.length+' unit(s) sent to '+toName+'. Waiting for confirmation.');
+  fbLogAction('ALLOCATION_SENT',currentUser.name+' allocated '+checkedBoxes.length+' unit(s) to '+toName);
+  renderGrid(visibleDevices());renderTable(visibleDevices());
+}
+
+function loadAllocIMEI(){
+  const b=document.getElementById('allocBrand').value;
+  // Only show devices of this brand that the CURRENT user actually holds
+  // (or, for CEO/Admin, anything in CEO master stock) — you can't allocate
+  // stock you don't have.
+  let mine;
+  if(currentUser.role==='ceo'||currentUser.role==='admin'){
+    mine=devices.filter(d=>d.brand===b&&d.status==='ceo');
+  }else{
+    mine=devices.filter(d=>d.brand===b&&d.holderUid===currentUser.uid);
+  }
+  const list=document.getElementById('allocList');
+  if(mine.length===0){
+    list.innerHTML='<div class="xs muted" style="padding:6px 0">You don\'t currently hold any '+b+' devices to allocate.</div>';
+    return;
+  }
+  list.innerHTML=mine.map(d=>`<label style="display:flex;align-items:center;gap:7px;padding:4px 0;cursor:pointer;font-size:12px"><input type="checkbox" value="${d.imei}"> <span style="font-family:monospace;font-size:11px">${d.imei} — ${d.model}</span></label>`).join('');
+}
+// Devices this user is actually allowed to sell — CEO/Admin can sell
+// straight from CEO master stock, everyone else can only sell stock
+// they personally hold right now.
+function sellableDevicesForCurrentUser(){
+  return currentUser.role==='ceo'||currentUser.role==='admin'
+    ? devices.filter(d=>d.status!=='sold'&&!d.hasIssue)
+    : devices.filter(d=>d.holderUid===currentUser.uid&&d.status!=='sold'&&!d.hasIssue);
+}
+// Fills the IMEI datalist with every device this user can sell, so
+// typing an IMEI (or a few digits of one) shows matching suggestions.
+function prepSaleModal(){
+  const mine=sellableDevicesForCurrentUser();
+  const dl=document.getElementById('saleIMEIOptions');
+  if(dl)dl.innerHTML=mine.map(d=>`<option value="${d.imei}">${d.brand} ${d.model}</option>`).join('');
+  document.getElementById('saleIMEI').value='';
+  document.getElementById('saleDevicePreview').innerHTML='Type or pick an IMEI to auto-fill';
+  document.getElementById('salePrice').value='';
+}
+// Called on every keystroke in the IMEI field — the moment the typed
+// text matches a device this user holds, its brand/model/specs/price
+// are pulled in automatically, exactly as required for receipt-making.
+function autofillSaleDevice(){
+  const imei=document.getElementById('saleIMEI').value.trim();
+  const preview=document.getElementById('saleDevicePreview');
+  const priceField=document.getElementById('salePrice');
+  const device=sellableDevicesForCurrentUser().find(d=>d.imei===imei);
+  if(!device){
+    preview.innerHTML='Type or pick an IMEI to auto-fill';
+    preview.style.color='';
+    return;
+  }
+  const specs=(device.ram&&device.ram!=='-'?device.ram+' / '+device.storage:'—');
+  preview.innerHTML=`<span class="bold">${device.brand} ${device.model}</span>&nbsp;<span class="xs muted">(${specs}${device.color?', '+device.color:''})</span>`;
+  preview.style.color='var(--green)';
+  if(!priceField.value)priceField.value=device.sell||'';
+}
+function loadReceiptInto(nr,cust,phone,nid,agent,brand,model,specs,color,imei,type,amount,receiptId){
+  currentReceiptId=receiptId||null;
+  document.getElementById('r-nr').textContent='RECEIPT #'+nr;
+  document.getElementById('r-cust').textContent=cust;
+  document.getElementById('r-phone').textContent=phone;
+  document.getElementById('r-nid').textContent=nid;
+  document.getElementById('r-agent').textContent='Agent '+agent;
+  document.getElementById('r-brand').textContent=brand;
+  document.getElementById('r-model').textContent=model;
+  document.getElementById('r-specs').textContent=specs;
+  document.getElementById('r-color').textContent=color;
+  document.getElementById('r-imei').textContent=imei;
+  document.getElementById('r-type').textContent=type;
+  document.getElementById('r-total').textContent='UGX '+amount.toLocaleString();
+  applyReceiptBranding();
+  const rec=receiptId?receiptsList.find(r=>r.id===receiptId):null;
+  const editedNote=document.getElementById('r-editedNote');
+  const editBtn=document.getElementById('r-editBtn');
+  if(editedNote){
+    if(rec&&rec.editHistory&&rec.editHistory.length){
+      editedNote.style.display='block';
+      editedNote.textContent='Edited '+rec.editHistory.length+' time(s) — last edit by '+rec.editHistory[rec.editHistory.length-1].editedBy+' on '+new Date(rec.editHistory[rec.editHistory.length-1].editedAt).toLocaleString();
+    }else{
+      editedNote.style.display='none';
+    }
+  }
+  // Only the person who made this sale, or CEO/Admin, can edit it —
+  // everyone else who can merely see the receipt (e.g. a manager
+  // viewing their team's sales) gets a read-only view.
+  if(editBtn){
+    const canEdit=!!receiptId&&currentUser&&(currentUser.role==='ceo'||currentUser.role==='admin'||(rec&&rec.soldByUid===currentUser.uid));
+    editBtn.style.display=canEdit?'inline-flex':'none';
+  }
+  toast('Receipt loaded');
+}
+
+// ======================================================
+// RECEIPTS — persisted per company, company-branded, editable
+// with a full audit trail visible to CEO/Admin only
+// ======================================================
+function connectReceipts(){
+  if(!fbReceipts)return;
+  fbReceipts.on('value',snap=>{
+    const val=snap.val()||{};
+    receiptsList=Object.keys(val).map(key=>({id:key,...val[key]}));
+    if(document.getElementById('pg-sales')?.classList.contains('on'))renderReceiptsTable();
+  });
+}
+// A receipt is visible to: CEO/Admin (all), the person who made the
+// sale, and anyone above them in the reporting chain (their Manager,
+// Team Leader, Regional Manager) — same team-scoping used everywhere
+// else, so nobody sees receipts outside their own downline.
+function visibleReceipts(){
+  if(!currentUser)return [];
+  if(currentUser.role==='ceo'||currentUser.role==='admin')return receiptsList;
+  const myTeamUids=new Set(getVisibleUsers().map(u=>u.uid));
+  myTeamUids.add(currentUser.uid);
+  return receiptsList.filter(r=>myTeamUids.has(r.soldByUid));
+}
+function renderReceiptsTable(){
+  const tb=document.getElementById('recentTransactionsBody');
+  if(!tb)return;
+  const list=visibleReceipts().sort((a,b)=>b.createdAt-a.createdAt).slice(0,20);
+  tb.innerHTML=list.length?list.map(r=>`
+    <tr style="cursor:pointer" onclick="loadReceiptInto('${r.nr}','${(r.custName||'').replace(/'/g,"")}','${r.custPhone||''}','${r.custNid||'—'}','${(r.soldBy||'').replace(/'/g,"")}','${(r.brand||'').replace(/'/g,"")}','${(r.model||'').replace(/'/g,"")}','${r.specs||'—'}','${r.color||'—'}','${r.imei}','${r.type}',${r.amount},'${r.id}')">
+      <td class="bold green xs">#${r.nr}</td><td>${r.custName}</td><td>${r.brand} ${r.model}</td>
+      <td><span class="badge ${r.type&&r.type.toLowerCase().includes('financ')?'b-b':'b-g'}">${r.type&&r.type.toLowerCase().includes('financ')?'Finance':'Cash'}</span></td>
+      <td>${r.soldBy}</td><td class="bold">${(r.amount||0).toLocaleString()}${r.editHistory&&r.editHistory.length?' <i class="fas fa-pen xs muted" title="Edited"></i>':''}</td>
+    </tr>`).join('')
+    :'<tr><td colspan="6" class="xs muted" style="text-align:center;padding:16px 0">No sales recorded yet.</td></tr>';
+}
+function saveReceiptRecord(nr,device,custName,custPhone,custNid,type,amount){
+  if(!fbReceipts)return null;
+  const specs=(device.ram&&device.ram!=='-'?device.ram+' / '+device.storage:'—');
+  const receipt={
+    nr,imei:device.imei,brand:device.brand,model:device.model,specs,color:device.color||'—',
+    custName,custPhone,custNid:custNid||'—',
+    soldBy:currentUser.name,soldByUid:currentUser.uid,
+    type,amount,createdAt:Date.now(),editHistory:[]
+  };
+  const newRef=fbReceipts.push(receipt);
+  currentReceiptId=newRef.key;
+  return newRef.key;
+}
+function openEditReceipt(){
+  if(!currentReceiptId){toast('This sample receipt cannot be edited','var(--amber)');return}
+  const rec=receiptsList.find(r=>r.id===currentReceiptId);
+  if(!rec){toast('Could not find that receipt','var(--red)');return}
+  document.getElementById('editRecCust').value=rec.custName||'';
+  document.getElementById('editRecPhone').value=rec.custPhone||'';
+  document.getElementById('editRecNid').value=rec.custNid||'';
+  document.getElementById('editRecPrice').value=rec.amount||'';
+  document.getElementById('editRecType').value=(rec.type&&rec.type.toLowerCase().includes('financ'))?'finance':'cash';
+  openM('mEditReceipt');
+}
+// Saving an edit never overwrites history — it appends a snapshot of
+// what changed, who changed it, and when, so CEO/Admin can always see
+// the original details plus every edit made since, for security.
+function saveReceiptEdit(){
+  if(!currentReceiptId)return;
+  const rec=receiptsList.find(r=>r.id===currentReceiptId);
+  if(!rec)return;
+  const custName=document.getElementById('editRecCust').value.trim();
+  const custPhone=document.getElementById('editRecPhone').value.trim();
+  const custNid=document.getElementById('editRecNid').value.trim();
+  const amount=parseInt(document.getElementById('editRecPrice').value)||rec.amount;
+  const type=document.getElementById('editRecType').value==='finance'?'Financed sale':'Cash sale';
+  if(!custName||!custPhone){toast('Customer name and phone are required','var(--red)');return}
+  const history=Array.isArray(rec.editHistory)?rec.editHistory:[];
+  history.push({
+    editedBy:currentUser.name,editedByRole:currentUser.role,editedAt:Date.now(),
+    before:{custName:rec.custName,custPhone:rec.custPhone,custNid:rec.custNid,amount:rec.amount,type:rec.type}
+  });
+  fbDb.ref('receipts/'+currentUser.companyId+'/'+currentReceiptId).update({
+    custName,custPhone,custNid:custNid||'—',amount,type,editHistory:history
+  }).then(()=>{
+    closeM('mEditReceipt');
+    toast('Receipt updated. This edit is logged for the CEO and Admins.');
+    fbLogAction('RECEIPT_EDITED',currentUser.name+' edited receipt '+rec.nr+' — visible in Audit Logs to CEO/Admin');
+    loadReceiptInto(rec.nr,custName,custPhone,custNid||'—',rec.soldBy,rec.brand,rec.model,rec.specs,rec.color,rec.imei,type,amount,currentReceiptId);
+  }).catch(()=>toast('Could not save — check your permissions','var(--red)'));
+}
+// ======================================================
+// FINANCING INTEGRATION — real partners and financed sales
+// ======================================================
+let financePartners={};
+let financedSales=[];
+
+function loadFinancingPage(){
+  if(!currentUser||!currentUser.companyId)return;
+  const canAdd=['ceo','admin'].includes(currentUser.role);
+  document.getElementById('addFinancePartnerBtn').style.display=canAdd?'inline-flex':'none';
+
+  fbDb.ref('companies/'+currentUser.companyId+'/financingPartners').once('value').then(snap=>{
+    financePartners=snap.val()||{};
+    renderFinancePartners();
+    populateFinancePartnerSelect();
+  });
+  fbDb.ref('financedSales/'+currentUser.companyId).on('value',snap=>{
+    const val=snap.val()||{};
+    financedSales=Object.keys(val).map(key=>({id:key,...val[key]}));
+    renderFinancingTable();
+  });
+}
+
+function renderFinancePartners(){
+  const wrap=document.getElementById('financePartnersList');
+  const keys=Object.keys(financePartners);
+  if(!keys.length){
+    wrap.innerHTML='<div class="xs muted">No financing partners added yet.</div>';
+    return;
+  }
+  const colors=['#e63946','#2d6a4f','#f77f00','#3a86ff','#8b5cf6','#06b6d4'];
+  wrap.innerHTML=keys.map((k,i)=>{
+    const p=financePartners[k];
+    const activeCount=financedSales.filter(s=>s.partnerKey===k&&s.status==='active').length;
+    const outstanding=financedSales.filter(s=>s.partnerKey===k&&s.status==='active').reduce((sum,s)=>sum+(s.balance||0),0);
+    return `<div class="fp"><div class="fp-logo" style="background:${colors[i%colors.length]};color:#fff">${p.name.slice(0,2).toUpperCase()}</div><div style="flex:1"><div class="bold sm">${p.name}</div><div style="font-size:10.5px;color:var(--muted)">${activeCount} active, UGX ${(outstanding/1000).toFixed(0)}K outstanding</div></div><span class="badge b-g">Active</span></div>`;
+  }).join('');
+}
+
+function doAddFinancePartner(){
+  const name=document.getElementById('fpName').value.trim();
+  const phone=document.getElementById('fpPhone').value.trim();
+  const email=document.getElementById('fpEmail').value.trim();
+  const interest=document.getElementById('fpInterest').value.trim();
+  const notes=document.getElementById('fpNotes').value.trim();
+  if(!name){toast('Please enter the partner\'s name','var(--red)');return}
+  const key='fp_'+Date.now();
+  fbDb.ref('companies/'+currentUser.companyId+'/financingPartners/'+key).set({
+    name,phone:phone||'—',email:email||'—',interest:interest||'—',notes:notes||'—',addedAt:Date.now(),addedBy:currentUser.uid
+  }).then(()=>{
+    financePartners[key]={name,phone,email,interest,notes};
+    renderFinancePartners();
+    populateFinancePartnerSelect();
+    closeM('mAddFinancePartner');
+    toast(name+' added as a financing partner');
+    fbLogAction('FINANCE_PARTNER_ADDED',currentUser.name+' added financing partner '+name);
+  }).catch(()=>toast('Could not save — check your permissions','var(--red)'));
+}
+
+function populateFinancePartnerSelect(){
+  const sel=document.getElementById('finPartnerSelect');
+  if(!sel)return;
+  const keys=Object.keys(financePartners);
+  sel.innerHTML='<option value="">Select a partner</option>'+keys.map(k=>`<option value="${k}">${financePartners[k].name}</option>`).join('');
+}
+function populateFinanceDeviceSelect(){
+  const sel=document.getElementById('finDeviceSelect');
+  if(!sel)return;
+  const mine=currentUser.role==='ceo'||currentUser.role==='admin'
+    ? devices.filter(d=>d.status!=='sold'&&!d.hasIssue)
+    : devices.filter(d=>d.holderUid===currentUser.uid&&d.status!=='sold'&&!d.hasIssue);
+  sel.innerHTML=mine.length
+    ? '<option value="">Select a device you currently hold</option>'+mine.map(d=>`<option value="${d.imei}">${d.brand} ${d.model} — ${d.imei} (UGX ${d.sell.toLocaleString()})</option>`).join('')
+    : '<option value="">You have no devices to finance</option>';
+}
+
+function doRecordFinancedSale(){
+  const partnerKey=document.getElementById('finPartnerSelect').value;
+  const imei=document.getElementById('finDeviceSelect').value;
+  const custName=document.getElementById('finCustName').value.trim();
+  const custPhone=document.getElementById('finCustPhone').value.trim();
+  const totalPrice=parseInt(document.getElementById('finTotalPrice').value)||0;
+  const downPayment=parseInt(document.getElementById('finDownPayment').value)||0;
+  const installments=parseInt(document.getElementById('finInstallments').value)||1;
+  const frequency=document.getElementById('finFrequency').value;
+  const err=document.getElementById('finSaleErr');
+  err.classList.remove('show');
+
+  if(!partnerKey||!imei||!custName||!custPhone||!totalPrice){
+    document.getElementById('finSaleErrText').textContent='Please fill in the partner, device, customer details, and total price.';
+    err.classList.add('show');
+    return;
+  }
+  if(downPayment>=totalPrice){
+    document.getElementById('finSaleErrText').textContent='Down payment should be less than the total price.';
+    err.classList.add('show');
+    return;
+  }
+  const device=devices.find(d=>d.imei===imei);
+  if(!device){toast('Could not find that device','var(--red)');return}
+
+  const balance=totalPrice-downPayment;
+  const record={
+    partnerKey,partnerName:financePartners[partnerKey]?.name||'—',
+    imei,deviceBrand:device.brand,deviceModel:device.model,
+    customerName:custName,customerPhone:custPhone,
+    totalPrice,downPayment,balance,installments,frequency,
+    installmentAmount:Math.ceil(balance/installments),
+    status:'active',recordedBy:currentUser.name,recordedByUid:currentUser.uid,createdAt:Date.now()
+  };
+  fbDb.ref('financedSales/'+currentUser.companyId).push(record).then(()=>{
+    fbUpdateDevice(imei,{status:'sold',soldTo:custName,soldAt:Date.now(),soldPrice:totalPrice,soldBy:currentUser.name,soldByUid:currentUser.uid,financed:true});
+    processCommissionsForSale(device,totalPrice);
+    const receiptNr='RCP-'+new Date().toISOString().slice(0,10).replace(/-/g,'')+'-'+Math.floor(Math.random()*9000+1000);
+    saveReceiptRecord(receiptNr,device,custName,custPhone,'—','Financed — '+(financePartners[partnerKey]?.name||'Partner'),totalPrice);
+    closeM('mAddFinancedSale');
+    toast('Financed sale recorded');
+    fbLogAction('FINANCED_SALE',currentUser.name+' recorded a financed sale: '+device.brand+' '+device.model+' to '+custName);
+    renderGrid(visibleDevices());renderTable(visibleDevices());
+  }).catch(()=>toast('Could not save — check your permissions','var(--red)'));
+}
+
+function renderFinancingTable(){
+  const tb=document.getElementById('financingTbody');
+  if(!tb)return;
+  const active=financedSales.filter(s=>s.status==='active');
+  const defaulted=financedSales.filter(s=>s.status==='defaulted');
+  const outstanding=active.reduce((s,r)=>s+(r.balance||0),0);
+  document.getElementById('finActiveCount').textContent=active.length;
+  document.getElementById('finOutstanding').textContent='UGX '+(outstanding/1000).toFixed(0)+'K';
+  document.getElementById('finDefaulted').textContent=defaulted.length;
+
+  tb.innerHTML=financedSales.length?financedSales.map(r=>`
+    <tr>
+      <td class="bold">${r.customerName}</td><td>${r.customerPhone}</td>
+      <td class="mono" style="font-size:10.5px">${r.imei}</td>
+      <td><span class="badge b-b">${r.partnerName}</span></td>
+      <td>${r.deviceBrand} ${r.deviceModel}</td>
+      <td>${r.downPayment.toLocaleString()}</td>
+      <td class="bold">${r.balance.toLocaleString()}</td>
+      <td><span class="badge ${r.status==='active'?'b-g':r.status==='defaulted'?'b-r':'b-a'}">${r.status}</span></td>
+    </tr>`).join(''):'<tr><td colspan="8" class="xs muted" style="text-align:center;padding:20px">No financed sales recorded yet.</td></tr>';
+}
+
+
+// ======================================================
+// DATE / GREETING
+// ======================================================
+// ======================================================
+// PER-ROLE DASHBOARD RENDERING
+// ======================================================
+function greetingText(){
+  const h=new Date().getHours();
+  const gr=h<12?'Good morning':h<17?'Good afternoon':'Good evening';
+  return currentUser?gr+', '+currentUser.title.split(' ')[0]+' '+currentUser.name.split(' ')[0]:gr;
+}
+function todayLong(){
+  return new Date().toLocaleDateString('en-UG',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+}
+function heroBlock(alertHtml){
+  return `<div style="background:linear-gradient(110deg,var(--card) 0%,rgba(0,200,150,.04) 60%,rgba(76,110,245,.04) 100%);border:1px solid var(--border);border-radius:14px;padding:22px;margin-bottom:18px;position:relative;overflow:hidden">
+    <div style="position:absolute;top:-30px;right:-30px;width:180px;height:180px;background:radial-gradient(circle,rgba(0,200,150,.07),transparent 70%);pointer-events:none"></div>
+    <div class="xs muted mb4" style="display:flex;align-items:center;gap:6px"><span class="dot-live"></span>Live overview</div>
+    <div style="font-family:'Space Grotesk',sans-serif;font-size:21px;font-weight:700;margin-bottom:4px">${greetingText()}</div>
+    <div class="sm muted">${alertHtml}</div>
+    <div style="margin-top:14px"><span style="background:var(--card2);border:1px solid var(--border);padding:5px 11px;border-radius:7px;font-size:11.5px;color:var(--muted);display:inline-flex;align-items:center;gap:5px"><i class="fas fa-calendar-alt"></i>${todayLong()}</span></div>
+  </div>`;
+}
+
+function updateGreeting(){
+  renderDashboard();
+}
+
+function renderDashboard(){
+  const el=document.getElementById('dashboardContent');
+  if(!el||!currentUser)return;
+  if(currentUser.role==='superadmin'){renderSuperAdminDashboard(el);return}
+  if(currentUser.role==='ceo'||currentUser.role==='admin'){renderCeoAdminDashboard(el);return}
+  if(currentUser.role==='regionalmanager'){renderRegionalManagerDashboard(el);return}
+  if(currentUser.role==='manager'){renderManagerDashboard(el);return}
+  if(currentUser.role==='teamleader'||currentUser.role==='shopmanager'){renderTeamLeaderDashboard(el);return}
+  if(currentUser.role==='agent'||currentUser.role==='shopowner'||currentUser.role==='shopstaff'){renderAgentDashboard(el);return}
+  if(currentUser.role==='recovery'){renderRecoveryDashboard(el);return}
+  el.innerHTML='<div class="xs muted">No dashboard configured for this role yet.</div>';
+}
+
+// ---- CEO / ADMIN: full company view ----
+function renderCeoAdminDashboard(el){
+  const myDevices=visibleDevices();
+  const held=myDevices.filter(d=>d.status!=='sold'&&!d.hasIssue);
+  const sold=myDevices.filter(d=>d.status==='sold');
+  const aged=held.filter(d=>d.age>20);
+  const stockValue=held.reduce((s,d)=>s+(d.sell||0),0);
+  const revenue=sold.reduce((s,d)=>s+(d.soldPrice||0),0);
+  registerSoldStockScope('ceo',sold);
+  const myTeam=getVisibleUsers();
+
+  // rank team members (excluding self) by their personal sales revenue
+  const ranked=myTeam.filter(u=>u.uid!==currentUser.uid).map(u=>{
+    const theirSales=devices.filter(d=>d.status==='sold'&&d.soldByUid===u.uid);
+    const rev=theirSales.reduce((s,d)=>s+(d.soldPrice||0),0);
+    return {name:u.name,role:u.role,rev,units:theirSales.length};
+  }).filter(r=>r.units>0).sort((a,b)=>b.rev-a.rev).slice(0,5);
+
+  el.innerHTML=`
+    ${heroBlock(aged.length?`You have <span style="color:var(--amber);font-weight:600">${aged.length} aged device${aged.length>1?'s':''}</span> needing attention.`:'No aged stock right now — everything looks healthy.')}
+    <div class="stats">
+      <div class="stat" style="border-top:2px solid var(--green)"><div class="stat-ic ic-g"><i class="fas fa-mobile-alt"></i></div><div class="stat-lbl">Stock on hand</div><div class="stat-val" style="font-size:30px">${held.length}</div></div>
+      <div class="stat" style="border-top:2px solid var(--blue)"><div class="stat-ic ic-b"><i class="fas fa-coins"></i></div><div class="stat-lbl">Stock value</div><div class="stat-val" style="font-size:21px">UGX ${(stockValue/1000000).toFixed(1)}M</div></div>
+      <div class="stat" style="border-top:2px solid var(--amber);flex:1.4"><div class="stat-ic ic-a"><i class="fas fa-chart-bar"></i></div><div class="stat-lbl">Revenue, all time</div><div class="stat-val" style="font-size:26px">UGX ${(revenue/1000000).toFixed(1)}M</div><div class="xs muted mt4">${sold.length} unit(s) sold</div></div>
+      <div class="stat" style="border-top:2px solid var(--red)"><div class="stat-ic ic-r"><i class="fas fa-clock"></i></div><div class="stat-lbl">Aged 21+ days</div><div class="stat-val red" style="font-size:30px">${aged.length}</div></div>
+    </div>
+    <div class="g2 mb16" style="grid-template-columns:2fr 3fr">
+      <div class="card">
+        <div class="hd2">Top performers</div>
+        ${ranked.length?ranked.map((r,i)=>`<div class="rank-row"><div class="rank-n ${i===0?'r1':i===1?'r2':i===2?'r3':'r0'}">${i+1}</div><div style="flex:1"><div class="bold sm">${r.name}</div><div class="xs muted">${roleLabels[r.role]||r.role}</div></div><div style="text-align:right"><div class="bold green sm">UGX ${(r.rev/1000000).toFixed(1)}M</div><div class="xs muted">${r.units} units</div></div></div>`).join(''):'<div class="xs muted">No sales recorded yet.</div>'}
+      </div>
+      <div class="card">
+        <div class="hd2">Aged stock</div>
+        ${aged.length?`<div class="tw"><table><thead><tr><th>Device</th><th>With</th><th>Days</th></tr></thead><tbody>${aged.slice(0,6).map(d=>`<tr style="cursor:pointer" onclick="openDetail('${d.brand} ${d.model}','${d.imei}','${d.holder}','${d.age}','${d.loc}')"><td class="bold">${d.brand} ${d.model}</td><td>${d.holder}</td><td><span class="age age-r">${d.age}d</span></td></tr>`).join('')}</tbody></table></div>`:'<div class="xs muted">Nothing aged right now.</div>'}
+      </div>
+    </div>
+    <div class="g2 mb16">
+      <div class="card">
+        <div class="hd2">Revenue trend — last 14 days</div>
+        <div class="ch h220"><canvas id="dashRevenueTrend"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="hd2">Team comparison — who's selling fastest</div>
+        <div class="ch h220"><canvas id="dashTeamCompare"></canvas></div>
+      </div>
+    </div>
+    ${soldStockWidgetHtml(sold,'ceo')}
+    <div class="card mt16">
+      <div class="between mb12"><div class="hd2" style="margin:0">Pending stock allocations awaiting approval</div></div>
+      <div class="peerAllocApprovalsWidget"><div class="xs muted">Loading...</div></div>
+    </div>`;
+  renderPeerAllocApprovals();
+  setTimeout(()=>{
+    drawRevenueTrend('dashRevenueTrend',sold);
+    drawTeamComparison('dashTeamCompare',ranked);
+  },30);
+}
+
+// ---- REGIONAL MANAGER ----
+function renderRegionalManagerDashboard(el){
+  const myRegionTeam=getVisibleUsers().filter(u=>u.uid!==currentUser.uid);
+  const managers=myRegionTeam.filter(u=>u.role==='manager');
+  const teamLeaders=myRegionTeam.filter(u=>u.role==='teamleader');
+  const agents=myRegionTeam.filter(u=>u.role==='agent'||u.role==='shopowner');
+  const allUids=myRegionTeam.map(u=>u.uid);
+  const regionStock=devices.filter(d=>allUids.includes(d.holderUid)&&d.status!=='sold'&&!d.hasIssue);
+  const regionAged=regionStock.filter(isInRecoveryPhase);
+  const regionSold=devices.filter(d=>allUids.includes(d.soldByUid)&&d.status==='sold');
+  const revenue=regionSold.reduce((s,d)=>s+(d.soldPrice||0),0);
+  registerSoldStockScope('regionalmanager',regionSold);
+
+  const rankBy=(list)=>list.map(u=>{
+    const sold=devices.filter(d=>d.soldByUid===u.uid&&d.status==='sold');
+    return {name:u.name,rev:sold.reduce((s,d)=>s+(d.soldPrice||0),0),units:sold.length};
+  }).filter(r=>r.units>0).sort((a,b)=>b.rev-a.rev);
+
+  const bestManager=rankBy(managers)[0];
+  const bestTL=rankBy(teamLeaders)[0];
+  const bestAgent=rankBy(agents)[0];
+  const allRanked=rankBy(myRegionTeam).slice(0,8);
+
+  el.innerHTML=`
+    ${heroBlock(`Overseeing the <span style="color:var(--violet);font-weight:600">${currentUser.assignedRegion||'unassigned'}</span> region.`)}
+    <div class="stats">
+      <div class="stat"><div class="stat-lbl">Managers</div><div class="stat-val" style="font-size:26px">${managers.length}</div></div>
+      <div class="stat"><div class="stat-lbl">Team Leaders</div><div class="stat-val" style="font-size:26px">${teamLeaders.length}</div></div>
+      <div class="stat"><div class="stat-lbl">Agents / Shops</div><div class="stat-val" style="font-size:26px">${agents.length}</div></div>
+      <div class="stat" style="flex:1.3"><div class="stat-lbl">Region revenue</div><div class="stat-val green" style="font-size:24px">UGX ${(revenue/1000000).toFixed(1)}M</div></div>
+      <div class="stat" style="border-top:3px solid var(--red)"><div class="stat-lbl">Aged stock in region</div><div class="stat-val red" style="font-size:26px">${regionAged.length}</div></div>
+    </div>
+    <div class="g3 mb16">
+      <div class="card-sm"><div class="xs muted mb6">Best Manager</div>${bestManager?`<div class="bold">${bestManager.name}</div><div class="xs green">UGX ${(bestManager.rev/1000000).toFixed(1)}M, ${bestManager.units} units</div>`:'<div class="xs muted">No sales yet</div>'}</div>
+      <div class="card-sm"><div class="xs muted mb6">Best Team Leader</div>${bestTL?`<div class="bold">${bestTL.name}</div><div class="xs green">UGX ${(bestTL.rev/1000000).toFixed(1)}M, ${bestTL.units} units</div>`:'<div class="xs muted">No sales yet</div>'}</div>
+      <div class="card-sm"><div class="xs muted mb6">Best Agent</div>${bestAgent?`<div class="bold">${bestAgent.name}</div><div class="xs green">UGX ${(bestAgent.rev/1000000).toFixed(1)}M, ${bestAgent.units} units</div>`:'<div class="xs muted">No sales yet</div>'}</div>
+    </div>
+    <div class="g2 mb16">
+      <div class="card">
+        <div class="hd2">Revenue trend — last 14 days</div>
+        <div class="ch h220"><canvas id="dashRevenueTrend"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="hd2">Top performers in your region</div>
+        <div class="ch h220"><canvas id="dashTeamCompare"></canvas></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="hd2">Aged stock in your region</div>
+      ${regionAged.length?`<div class="tw"><table><thead><tr><th>Device</th><th>With</th><th>Days</th></tr></thead><tbody>${regionAged.slice(0,8).map(d=>`<tr style="cursor:pointer" onclick="openDetail('${d.brand} ${d.model}','${d.imei}','${d.holder}','${d.age}','${d.loc}')"><td class="bold">${d.brand} ${d.model}</td><td>${d.holder}</td><td><span class="age age-r">${d.age}d</span></td></tr>`).join('')}</tbody></table></div>`:'<div class="xs muted">Nothing aged in your region right now.</div>'}
+    </div>
+    ${soldStockWidgetHtml(regionSold,'regionalmanager')}
+    <div class="card mt16">
+      <div class="between mb12"><div class="hd2" style="margin:0">Pending stock allocations awaiting your approval</div></div>
+      <div class="peerAllocApprovalsWidget"><div class="xs muted">Loading...</div></div>
+    </div>`;
+  renderPeerAllocApprovals();
+  setTimeout(()=>{
+    drawRevenueTrend('dashRevenueTrend',regionSold);
+    drawTeamComparison('dashTeamCompare',allRanked);
+  },30);
+}
+
+function renderManagerDashboard(el){
+  const myTeam=getVisibleUsers().filter(u=>u.uid!==currentUser.uid);
+  const teamLeaders=myTeam.filter(u=>u.role==='teamleader');
+  const agents=myTeam.filter(u=>u.role==='agent');
+  const myDownlineUids=myTeam.map(u=>u.uid);
+  const myStock=devices.filter(d=>myDownlineUids.includes(d.holderUid)&&d.status!=='sold'&&!d.hasIssue);
+  const mySold=devices.filter(d=>myDownlineUids.includes(d.soldByUid)&&d.status==='sold');
+  const revenue=mySold.reduce((s,d)=>s+(d.soldPrice||0),0);
+  registerSoldStockScope('manager',mySold);
+  const myQuotient=teamStockQuotientFor(currentUser.uid,'manager');
+
+  // compare Team Leaders by the revenue their whole sub-team generates,
+  // so the Manager can see which Team Leader is moving fastest
+  const tlRanked=teamLeaders.map(tl=>{
+    const tlAgents=myTeam.filter(u=>u.role==='agent'&&u.reportsTo===tl.uid);
+    const tlTeamUids=[tl.uid,...tlAgents.map(a=>a.uid)];
+    const tlSold=devices.filter(d=>tlTeamUids.includes(d.soldByUid)&&d.status==='sold');
+    return {name:tl.name+(tl.teamName?' ('+tl.teamName+')':''),rev:tlSold.reduce((s,d)=>s+(d.soldPrice||0),0)};
+  }).sort((a,b)=>b.rev-a.rev);
+
+  el.innerHTML=`
+    ${heroBlock(`Your team's stock efficiency is <span style="color:${quotientColor(myQuotient.quotient)};font-weight:600">${myQuotient.quotient}%</span>.`)}
+    <div class="stats">
+      <div class="stat"><div class="stat-lbl">Team Leaders</div><div class="stat-val" style="font-size:26px">${teamLeaders.length}</div></div>
+      <div class="stat"><div class="stat-lbl">Agents</div><div class="stat-val" style="font-size:26px">${agents.length}</div></div>
+      <div class="stat"><div class="stat-lbl">Team stock on hand</div><div class="stat-val" style="font-size:26px">${myStock.length}</div></div>
+      <div class="stat" style="flex:1.3"><div class="stat-lbl">Team revenue</div><div class="stat-val green" style="font-size:24px">UGX ${(revenue/1000000).toFixed(1)}M</div></div>
+      <div class="stat" style="border-top:3px solid ${quotientColor(myQuotient.quotient)}"><div class="stat-lbl">Your efficiency score</div><div class="stat-val" style="font-size:26px;color:${quotientColor(myQuotient.quotient)}">${myQuotient.quotient}%</div></div>
+    </div>
+    <div class="card mb16">
+      <div class="hd2">Your Team Leaders, with their stock</div>
+      ${teamLeaders.length?teamLeaders.map(tl=>{
+        const tlAgents=myTeam.filter(u=>u.role==='agent'&&u.reportsTo===tl.uid);
+        const tlTeamUids=[tl.uid,...tlAgents.map(a=>a.uid)];
+        const tlStock=devices.filter(d=>tlTeamUids.includes(d.holderUid)&&d.status!=='sold'&&!d.hasIssue);
+        const tlAged=tlStock.filter(isInRecoveryPhase);
+        const tlQ=teamStockQuotientFor(tl.uid,'teamleader');
+        return `<div class="card-sm mb8" style="cursor:pointer" onclick="openTeamStockDrilldown('${tl.uid}','${tl.name.replace(/'/g,"")}')">
+          <div class="between mb6"><span class="bold sm">${tl.name}${tl.teamName?' — '+tl.teamName:''}</span><span class="badge ${quotientBadgeClass(tlQ.quotient)}">${tlQ.quotient}% efficient</span></div>
+          <div class="xs muted">${tlAgents.length} agent(s), ${tlStock.length} unit(s) held${tlAged.length?', <span class="red">'+tlAged.length+' aged</span>':''}</div>
+          <div class="xs green mt4">Tap to see every agent's IMEIs <i class="fas fa-arrow-right" style="font-size:9px"></i></div>
+        </div>`;
+      }).join(''):'<div class="xs muted">No Team Leaders yet.</div>'}
+    </div>
+    <div class="g2 mb16">
+      <div class="card">
+        <div class="hd2">Revenue trend — last 14 days</div>
+        <div class="ch h220"><canvas id="dashRevenueTrend"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="hd2">Team Leader comparison</div>
+        <div class="ch h220"><canvas id="dashTeamCompare"></canvas></div>
+      </div>
+    </div>
+    ${soldStockWidgetHtml(mySold,'manager')}`;
+  setTimeout(()=>{
+    drawRevenueTrend('dashRevenueTrend',mySold);
+    drawTeamComparison('dashTeamCompare',tlRanked);
+  },30);
+}
+
+// ---- TEAM LEADER ----
+function renderTeamLeaderDashboard(el){
+  const myAgents=getVisibleUsers().filter(u=>u.uid!==currentUser.uid);
+  const myDownlineUids=[currentUser.uid,...myAgents.map(u=>u.uid)];
+  const myStock=devices.filter(d=>myDownlineUids.includes(d.holderUid)&&d.status!=='sold'&&!d.hasIssue);
+  const mySold=devices.filter(d=>myDownlineUids.includes(d.soldByUid)&&d.status==='sold');
+  const revenue=mySold.reduce((s,d)=>s+(d.soldPrice||0),0);
+  registerSoldStockScope('teamleader',mySold);
+  const myQuotient=teamStockQuotientFor(currentUser.uid,'teamleader');
+  const personalStock=devices.filter(d=>d.holderUid===currentUser.uid&&d.status!=='sold'&&!d.hasIssue);
+
+  const agentRanked=myAgents.map(a=>{
+    const aSold=devices.filter(d=>d.soldByUid===a.uid&&d.status==='sold');
+    return {name:a.name,rev:aSold.reduce((s,d)=>s+(d.soldPrice||0),0)};
+  }).sort((a,b)=>b.rev-a.rev);
+
+  el.innerHTML=`
+    ${heroBlock(`Your team's stock efficiency is <span style="color:${quotientColor(myQuotient.quotient)};font-weight:600">${myQuotient.quotient}%</span>.`)}
+    <div class="stats">
+      <div class="stat"><div class="stat-lbl">Your agents</div><div class="stat-val" style="font-size:26px">${myAgents.length}</div></div>
+      <div class="stat"><div class="stat-lbl">You personally hold</div><div class="stat-val" style="font-size:26px">${personalStock.length}</div></div>
+      <div class="stat"><div class="stat-lbl">Team stock on hand</div><div class="stat-val" style="font-size:26px">${myStock.length}</div></div>
+      <div class="stat" style="flex:1.3"><div class="stat-lbl">Team revenue</div><div class="stat-val green" style="font-size:24px">UGX ${(revenue/1000000).toFixed(1)}M</div></div>
+      <div class="stat" style="border-top:3px solid ${quotientColor(myQuotient.quotient)}"><div class="stat-lbl">Your efficiency score</div><div class="stat-val" style="font-size:26px;color:${quotientColor(myQuotient.quotient)}">${myQuotient.quotient}%</div></div>
+    </div>
+    <div class="card mb16">
+      <div class="between mb12"><div class="hd2" style="margin:0">Your agents, with their stock</div></div>
+      ${myAgents.length?myAgents.map(a=>{
+        const aQ=stockQuotientFor(a.uid);
+        return `<div class="card-sm mb8"><div class="between mb6"><span class="bold sm">${a.name}</span><span class="badge ${quotientBadgeClass(aQ.quotient)}">${aQ.quotient}% efficient</span></div><div class="xs muted">${aQ.total} unit(s) held — ${aQ.green} fresh, ${aQ.orange} moderate, ${aQ.red} aged</div></div>`;
+      }).join(''):'<div class="xs muted">No agents yet.</div>'}
+    </div>
+    <div class="g2 mb16">
+      <div class="card">
+        <div class="hd2">Revenue trend — last 14 days</div>
+        <div class="ch h220"><canvas id="dashRevenueTrend"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="hd2">Agent comparison</div>
+        <div class="ch h220"><canvas id="dashTeamCompare"></canvas></div>
+      </div>
+    </div>
+    ${soldStockWidgetHtml(mySold,'teamleader')}
+    <button class="btn btn-g btn-sm" onclick="go('sales')"><i class="fas fa-receipt"></i> Record a sale</button>`;
+  setTimeout(()=>{
+    drawRevenueTrend('dashRevenueTrend',mySold);
+    drawTeamComparison('dashTeamCompare',agentRanked);
+  },30);
+}
+
+// ---- AGENT / SHOP OWNER ----
+function renderAgentDashboard(el){
+  const myStock=devices.filter(d=>d.holderUid===currentUser.uid&&d.status!=='sold'&&!d.hasIssue);
+  const mySold=devices.filter(d=>d.soldByUid===currentUser.uid&&d.status==='sold');
+  const revenue=mySold.reduce((s,d)=>s+(d.soldPrice||0),0);
+  const myQuotient=stockQuotientFor(currentUser.uid);
+  registerSoldStockScope('agent',mySold);
+
+  el.innerHTML=`
+    ${heroBlock(`Your personal stock efficiency is <span style="color:${quotientColor(myQuotient.quotient)};font-weight:600">${myQuotient.quotient}%</span>.`)}
+    <div class="stats">
+      <div class="stat"><div class="stat-lbl">Stock you hold</div><div class="stat-val" style="font-size:30px">${myStock.length}</div></div>
+      <div class="stat"><div class="stat-lbl">Units sold, all time</div><div class="stat-val" style="font-size:26px">${mySold.length}</div></div>
+      <div class="stat" style="flex:1.3"><div class="stat-lbl">Your revenue</div><div class="stat-val green" style="font-size:24px">UGX ${(revenue/1000000).toFixed(1)}M</div></div>
+      <div class="stat" style="border-top:3px solid ${quotientColor(myQuotient.quotient)}"><div class="stat-lbl">Efficiency score</div><div class="stat-val" style="font-size:26px;color:${quotientColor(myQuotient.quotient)}">${myQuotient.quotient}%</div></div>
+    </div>
+    <div class="card mb16">
+      <div class="between mb12"><div class="hd2" style="margin:0">Your stock right now</div><span class="xs muted">${myQuotient.green} fresh · ${myQuotient.orange} moderate · ${myQuotient.red} aged</span></div>
+      ${myStock.length?`<div class="g4" style="gap:10px">${myStock.map(d=>`<div class="dcard" onclick="openDetail('${d.brand} ${d.model}','${d.imei}','${d.holder}','${d.age}','${d.loc}')"><div class="dcard-top"><div class="dcard-icon">📱</div><span class="age ${ageClass(d)}">${d.age}d</span></div><div class="dcard-brand">${d.brand}</div><div class="dcard-model">${d.model}</div><div class="dcard-price">UGX ${d.sell.toLocaleString()}</div></div>`).join('')}</div>`:'<div class="xs muted">You have no stock right now.</div>'}
+    </div>
+    ${soldStockWidgetHtml(mySold,'agent')}
+    <button class="btn btn-g btn-sm" onclick="go('sales')"><i class="fas fa-receipt"></i> Record a sale</button>`;
+}
+
+// ---- RECOVERY OFFICER ----
+function renderRecoveryDashboard(el){
+  el.innerHTML=`
+    ${heroBlock('Here are the aged-stock cases assigned to you.')}
+    <div class="card"><div class="hd2">Your assigned cases</div>
+      <button class="btn btn-g btn-sm" onclick="go('recovery')">Go to Recovery Management</button>
+    </div>`;
+}
+
+// ---- SUPER ADMIN: oversees every company ----
+function renderSuperAdminDashboard(el){
+  fbDb.ref('companies').once('value').then(snap=>{
+    const companiesVal=snap.val()||{};
+    const ids=Object.keys(companiesVal);
+    const active=ids.filter(id=>companiesVal[id].subscription?.status==='active').length;
+    const pending=ids.filter(id=>(companiesVal[id].subscription?.status||'pending')==='pending').length;
+    const suspended=ids.filter(id=>companiesVal[id].subscription?.status==='suspended').length;
+
+    el.innerHTML=`
+      ${heroBlock(`You oversee <span style="color:var(--green);font-weight:600">${ids.length} compan${ids.length===1?'y':'ies'}</span> on this platform.`)}
+      <div class="stats">
+        <div class="stat" style="border-top:2px solid var(--green)"><div class="stat-lbl">Total companies</div><div class="stat-val" style="font-size:30px">${ids.length}</div></div>
+        <div class="stat" style="border-top:2px solid var(--green)"><div class="stat-lbl">Active subscriptions</div><div class="stat-val green" style="font-size:28px">${active}</div></div>
+        <div class="stat" style="border-top:2px solid var(--amber)"><div class="stat-lbl">Pending payment</div><div class="stat-val amber" style="font-size:28px">${pending}</div></div>
+        <div class="stat" style="border-top:2px solid var(--red)"><div class="stat-lbl">Suspended</div><div class="stat-val red" style="font-size:28px">${suspended}</div></div>
+      </div>
+      <div class="card">
+        <div class="between mb12"><div class="hd2" style="margin:0">All companies</div><span class="xs muted">${ids.length} of 200 capacity</span></div>
+        <div class="tw"><table><thead><tr><th>Company</th><th>CEO</th><th>District</th><th>Status</th><th>Registered</th><th></th></tr></thead><tbody>
+          ${ids.length?ids.map(id=>{
+            const c=companiesVal[id];
+            const p=c.profile||{};
+            const sub=c.subscription||{status:'pending'};
+            const badgeClass=sub.status==='active'?'b-g':sub.status==='suspended'?'b-r':'b-a';
+            return `<tr><td class="bold">${p.businessName||'—'}</td><td>${p.ceoName||'—'}</td><td>${p.district||'—'}</td><td><span class="badge ${badgeClass}">${sub.status}</span></td><td class="xs muted">${p.registeredAt?new Date(p.registeredAt).toLocaleDateString():'—'}</td><td>${sub.status==='active'?`<button class="btn btn-danger btn-sm" onclick="setCompanySubStatus('${id}','suspended')">Suspend</button>`:`<button class="btn btn-g btn-sm" onclick="setCompanySubStatus('${id}','active')">Activate</button>`}</td></tr>`;
+          }).join(''):'<tr><td colspan="6" class="xs muted" style="text-align:center;padding:16px">No companies registered yet.</td></tr>'}
+        </tbody></table></div>
+      </div>`;
+  });
+}
+function setCompanySubStatus(companyId,status){
+  fbDb.ref('companies/'+companyId+'/subscription').update({status,updatedAt:Date.now(),updatedBy:currentUser.name}).then(()=>{
+    toast('Subscription status updated');
+    renderDashboard();
+  }).catch(()=>toast('Could not update — check permissions','var(--red)'));
+}
+
+// ======================================================
+// UGANDA MAP
+// ======================================================
+function initMap(){
+  const svg=document.getElementById('mapSvg');if(!svg)return;
+  const tt=document.getElementById('mapTT');
+  svg.querySelectorAll('path').forEach(p=>{
+    p.addEventListener('mouseenter',function(){tt.style.display='block';tt.innerHTML='<strong>'+this.dataset.name+'</strong><br>'+this.dataset.val+', '+this.dataset.units+' units'});
+    p.addEventListener('mousemove',function(e){
+      const r=svg.parentElement.getBoundingClientRect();
+      tt.style.left=(e.clientX-r.left+10)+'px';tt.style.top=(e.clientY-r.top-40)+'px';
+    });
+    p.addEventListener('mouseleave',()=>tt.style.display='none');
+    p.addEventListener('click',function(){
+      svg.querySelectorAll('path').forEach(x=>x.classList.remove('sel'));
+      this.classList.toggle('sel');
+      toast(this.dataset.name+': '+this.dataset.val+', '+this.dataset.units+' units');
+    });
+  });
+}
+
+// ======================================================
+// CHARTS
+// ======================================================
+const CH={};
+function mk(id,type,data,opts){
+  const el=document.getElementById(id);if(!el)return;
+  if(CH[id])CH[id].destroy();
+  CH[id]=new Chart(el,{type,data,options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},...opts}});
+}
+const grd={color:'rgba(255,255,255,.04)'};
+const txMuted={color:'rgba(255,255,255,.4)',font:{size:10}};
+
+// Real-time revenue trend over the last 14 days, built from actual
+// sold devices — redraws fresh every time a dashboard renders, so it
+// always reflects the latest sale the instant it happens.
+// ======================================================
+// SOLD STOCK TIME WINDOWS — today/week/month, with Excel export
+// for longer ranges. Reusable on every dashboard that holds stock.
+// ======================================================
+function startOfTodayMs(){const d=new Date();d.setHours(0,0,0,0);return d.getTime()}
+function startOfWeekMs(){const d=new Date(startOfTodayMs());d.setDate(d.getDate()-d.getDay());return d.getTime()}
+function startOfMonthMs(){const d=new Date();return new Date(d.getFullYear(),d.getMonth(),1).getTime()}
+function monthsAgoMs(n){const d=new Date();d.setMonth(d.getMonth()-n);return d.getTime()}
+
+function soldStockWindows(soldDevices){
+  const today=startOfTodayMs(),week=startOfWeekMs(),month=startOfMonthMs();
+  const inRange=(start)=>soldDevices.filter(d=>d.soldAt>=start);
+  return {
+    today:inRange(today),
+    week:inRange(week),
+    month:inRange(month),
+  };
+}
+
+function soldStockWidgetHtml(soldDevices,idPrefix){
+  const w=soldStockWindows(soldDevices);
+  const sum=(list)=>list.reduce((s,d)=>s+(d.soldPrice||0),0);
+  return `<div class="card mb16">
+    <div class="between mb12"><div class="hd2" style="margin:0">Sold stock</div><span class="xs muted">Export longer ranges as Excel below</span></div>
+    <div class="stats" style="margin-bottom:12px">
+      <div class="stat"><div class="stat-lbl">Today</div><div class="stat-val" style="font-size:22px">${w.today.length}</div><div class="xs muted mt4">UGX ${(sum(w.today)/1000).toFixed(0)}K</div></div>
+      <div class="stat"><div class="stat-lbl">This week</div><div class="stat-val" style="font-size:22px">${w.week.length}</div><div class="xs muted mt4">UGX ${(sum(w.week)/1000).toFixed(0)}K</div></div>
+      <div class="stat"><div class="stat-lbl">This month</div><div class="stat-val" style="font-size:22px">${w.month.length}</div><div class="xs muted mt4">UGX ${(sum(w.month)/1000).toFixed(0)}K</div></div>
+    </div>
+    <div class="row">
+      <button class="btn btn-g btn-sm" onclick="exportSoldStockExcel('${idPrefix}',3)"><i class="fas fa-file-excel"></i>Export last 3 months</button>
+      <button class="btn btn-g btn-sm" onclick="exportSoldStockExcel('${idPrefix}',12)"><i class="fas fa-file-excel"></i>Export last 12 months</button>
+    </div>
+  </div>`;
+}
+
+// Stores the current scope's sold devices so the export buttons (which
+// only receive a short id, to keep onclick attributes small) can find
+// the right data when clicked.
+let soldStockExportScopes={};
+function registerSoldStockScope(idPrefix,soldDevices){
+  soldStockExportScopes[idPrefix]=soldDevices;
+}
+
+function exportSoldStockExcel(idPrefix,months){
+  const soldDevices=soldStockExportScopes[idPrefix]||[];
+  const cutoff=monthsAgoMs(months);
+  const inRange=soldDevices.filter(d=>d.soldAt>=cutoff);
+  if(!inRange.length){
+    toast('No sold devices in that period yet','var(--amber)');
+    return;
+  }
+  try{
+    const rows=inRange.map(d=>({
+      'Date Sold':new Date(d.soldAt).toLocaleDateString(),
+      'Time Sold':new Date(d.soldAt).toLocaleTimeString(),
+      'IMEI':d.imei,
+      'Brand':d.brand,
+      'Model':d.model,
+      'Customer':d.soldTo||'—',
+      'Sold By':d.soldBy||'—',
+      'Sale Price (UGX)':d.soldPrice||0,
+      'Financed':d.financed?'Yes':'No'
+    }));
+    const ws=XLSX.utils.json_to_sheet(rows);
+    ws['!cols']=[{wch:12},{wch:10},{wch:17},{wch:12},{wch:18},{wch:20},{wch:18},{wch:16},{wch:10}];
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'Sold Stock');
+    XLSX.writeFile(wb,'sold-stock-'+months+'-months-'+new Date().toISOString().slice(0,10)+'.xlsx');
+    toast('Excel file downloaded');
+    fbLogAction('EXPORT_EXCEL',currentUser.name+' exported '+months+'-month sold stock report');
+  }catch(e){
+    console.error(e);
+    toast('Could not generate the Excel file. Try again.','var(--red)');
+  }
+}
+
+function drawRevenueTrend(canvasId,soldDevices){
+  const days=[];
+  const labels=[];
+  const now=new Date();
+  for(let i=13;i>=0;i--){
+    const d=new Date(now);d.setDate(d.getDate()-i);d.setHours(0,0,0,0);
+    days.push(d.getTime());
+    labels.push(d.toLocaleDateString('en-UG',{day:'numeric',month:'short'}));
+  }
+  const totals=days.map((dayStart,idx)=>{
+    const dayEnd=idx<days.length-1?days[idx+1]:dayStart+86400000;
+    return soldDevices.filter(d=>d.soldAt>=dayStart&&d.soldAt<dayEnd).reduce((s,d)=>s+(d.soldPrice||0),0);
+  });
+  mk(canvasId,'line',{
+    labels,
+    datasets:[{label:'UGX',data:totals,borderColor:'#00c896',backgroundColor:'rgba(0,200,150,.08)',fill:true,tension:.35,pointRadius:2,borderWidth:2}]
+  },{scales:{x:{grid:{display:false},ticks:{...txMuted,maxRotation:0,autoSkip:true}},y:{grid:grd,ticks:{...txMuted,callback:v=>(v/1000)+'K'}}}});
+}
+
+// Compares team members by revenue — used on CEO/Admin, Manager, and
+// Team Leader dashboards alike, just fed a different "ranked" list
+function drawTeamComparison(canvasId,ranked){
+  if(!ranked||!ranked.length){
+    const el=document.getElementById(canvasId);
+    if(el)el.parentElement.innerHTML='<div class="xs muted" style="text-align:center;padding:40px 0">Not enough sales yet to compare.</div>';
+    return;
+  }
+  const colors=['#00c896','#4c6ef5','#f5a623','#8b5cf6','#e84545','#06b6d4','#f97316'];
+  mk(canvasId,'bar',{
+    labels:ranked.map(r=>r.name.split(' ')[0]),
+    datasets:[{label:'UGX',data:ranked.map(r=>r.rev),backgroundColor:ranked.map((_,i)=>colors[i%colors.length]),borderRadius:6,borderWidth:0}]
+  },{scales:{x:{grid:{display:false},ticks:txMuted},y:{grid:grd,ticks:{...txMuted,callback:v=>(v/1000)+'K'}}}});
+}
+
+const tx={color:'rgba(255,255,255,.38)',font:{size:10.5}};
+
+function buildCharts(pg){
+  if(pg==='dashboard'){
+    mk('cSales','line',{
+      labels:['Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May','Jun'],
+      datasets:[{label:'UGX M',data:[198,224,241,268,287,312,228,261,289,304,291,312],borderColor:'#00c896',fill:true,backgroundColor:'rgba(0,200,150,.07)',tension:.4,pointRadius:3,borderWidth:2,pointBackgroundColor:'#00c896'}]
+    },{scales:{x:{grid:grd,ticks:tx},y:{grid:grd,ticks:tx}}});
+    mk('cBrand','doughnut',{
+      labels:['Tecno','Samsung','Infinix','Itel','Redmi','Others'],
+      datasets:[{data:[234,198,142,89,68,116],backgroundColor:['#00c896','#4c6ef5','#f5a623','#e84545','#8b5cf6','#475569'],borderWidth:0}]
+    },{cutout:'62%',plugins:{legend:{display:true,position:'bottom',labels:{color:'rgba(255,255,255,.5)',padding:6,font:{size:10},boxWidth:10}}}});
+    mk('cAge','bar',{
+      labels:['0 to 9 days','10 to 20 days','21+ days'],
+      datasets:[{data:[620,180,47],backgroundColor:['rgba(0,200,150,.65)','rgba(245,166,35,.65)','rgba(232,69,69,.65)'],borderRadius:6,borderWidth:0}]
+    },{indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{grid:grd,ticks:tx},y:{grid:{display:false},ticks:tx}}});
+  }else if(pg==='ceo'){
+    mk('cRegion','bar',{
+      labels:['Central','Eastern','Northern','Western','Greater KLA'],
+      datasets:[{data:[312,168,142,98,224],backgroundColor:'rgba(76,110,245,.65)',borderRadius:6,borderWidth:0}]
+    },{indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{grid:grd,ticks:tx},y:{grid:{display:false},ticks:tx}}});
+  }else if(pg==='reports'){
+    mk('cReports','bar',{
+      labels:['Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May','Jun'],
+      datasets:[
+        {label:'Cash',data:[112,128,139,155,162,178,132,148,166,174,168,178],backgroundColor:'rgba(0,200,150,.65)',borderRadius:4,borderWidth:0},
+        {label:'Finance',data:[86,96,102,113,125,134,96,113,123,130,123,134],backgroundColor:'rgba(76,110,245,.65)',borderRadius:4,borderWidth:0},
+      ]
+    },{plugins:{legend:{display:true,position:'bottom',labels:{color:'rgba(255,255,255,.5)',font:{size:10},boxWidth:10,padding:8}}},scales:{x:{grid:{display:false},ticks:tx},y:{grid:grd,ticks:tx}}});
+  }else if(pg==='uganda'){
+    mk('cUganda','bar',{
+      labels:['Kampala','Wakiso','Gulu','Jinja','Mbale','Mbarara','Arua','Lira','Masaka','Tororo'],
+      datasets:[{data:[142,84,56,44,36,30,21,16,10,14],backgroundColor:['rgba(0,200,150,.75)','rgba(0,200,150,.6)','rgba(76,110,245,.65)','rgba(76,110,245,.5)','rgba(245,166,35,.6)','rgba(245,166,35,.5)','rgba(139,92,246,.55)','rgba(139,92,246,.45)','rgba(232,69,69,.5)','rgba(232,69,69,.4)'],borderRadius:6,borderWidth:0}]
+    },{plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:tx},y:{grid:grd,ticks:tx}}});
+    initMap();
+  }
+}
+
+// ======================================================
+// KEYBOARD
+// ======================================================
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){
+    document.querySelectorAll('.mwrap').forEach(m=>m.classList.remove('open'));
+    closeDetail();
+    document.getElementById('notifPanel').classList.remove('open');
+  }
+});
+
+// ======================================================
+// BOOT
+// ======================================================
+function bootApp(){
+  const app=document.getElementById('app');
+  app.classList.add('on');
+  app.style.display='flex';
+  if(currentUser.role!=='superadmin'){
+    connectCompanyData();
+  }
+  loadAgingPolicy().then(()=>{
+    renderGrid(visibleDevices());
+    renderTable(visibleDevices());
+    if(document.getElementById('pg-recovery')?.classList.contains('on'))renderRecoveryQueue();
+  });
+  renderCustomers(visibleCustomers());
+  renderUsersFromDb();
+  loadAllocIMEI();
+  fbWatchIssueReports();
+  loadCommissionsPage();
+  document.getElementById('nav-dashboard').classList.add('on');
+  document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
+  document.getElementById('pg-dashboard').classList.add('on');
+  document.getElementById('pageTitle').textContent='Dashboard';
+  applyPermissions();
+  renderDashboard();
+  startSessionTimer();
+  resetInactivity();
+  toast('Signed in as '+currentUser.name);
+  fbLogAction('LOGIN','Signed in from '+(navigator.userAgent.includes('Mobile')?'mobile device':'desktop'));
+}
+
+function hideSplashAndShowLogin(){
+  const splash=document.getElementById('splash');
+  if(splash){
+    splash.classList.add('out');
+    setTimeout(()=>{splash.style.display='none'},500);
+  }
+  try{
+    checkFirstRun();
+  }catch(e){
+    console.error('checkFirstRun failed, falling back to login screen',e);
+    document.getElementById('loginScreen').classList.add('on');
+  }
+}
+
+window.addEventListener('load',()=>{
+  // Firebase loading is wrapped so that even if the CDN scripts fail
+  // entirely (slow connection, blocked request, ad blocker), the app
+  // still reaches the login screen instead of freezing on the splash
+  // screen forever. A failed connection will show as "Offline" in the
+  // sync pill rather than a blank page.
+  try{
+    initFirebase();
+  }catch(e){
+    console.error('Firebase failed to initialize',e);
+    setSyncStatus('offline');
+  }
+  setTimeout(hideSplashAndShowLogin,1700);
+});
+
+// Safety net: if for any reason the splash screen is still showing
+// after 8 seconds (slow network, an unexpected error, etc.), force it
+// away so the page is never stuck blank on a phone.
+setTimeout(()=>{
+  const splash=document.getElementById('splash');
+  if(splash&&splash.style.display!=='none'){
+    console.warn('Splash screen safety timeout triggered');
+    hideSplashAndShowLogin();
+  }
+},8000);
