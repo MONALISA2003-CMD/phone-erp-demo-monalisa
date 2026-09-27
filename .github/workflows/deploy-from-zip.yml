@@ -18,34 +18,84 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Validate release ZIP
+      - name: Validate and extract ZIP
         shell: bash
         run: |
           set -e
-          test -f monalisa-stock-erp-release.zip
-          unzip -t monalisa-stock-erp-release.zip
+
+          echo "Checking release ZIP..."
+
+          if [ ! -f "monalisa-stock-erp-release.zip" ]; then
+            echo "ERROR: Release ZIP not found."
+            exit 1
+          fi
+
           rm -rf .release
-          mkdir .release
-          unzip -q monalisa-stock-erp-release.zip -d .release
+          mkdir -p .release
 
-          test -f .release/index.html
-          test -f .release/app.js
-          test -f .release/styles.css
+          echo "Testing ZIP..."
+          unzip -t "monalisa-stock-erp-release.zip"
 
-      - name: Replace old application
+          echo "Extracting ZIP..."
+          unzip -q "monalisa-stock-erp-release.zip" -d ".release"
+
+          echo "Extracted files:"
+          find .release -maxdepth 3 -type f | sort
+
+          if [ ! -f ".release/index.html" ]; then
+            echo "ERROR: index.html is missing."
+            exit 1
+          fi
+
+          if [ ! -f ".release/app.js" ]; then
+            echo "ERROR: app.js is missing."
+            exit 1
+          fi
+
+          if [ ! -f ".release/styles.css" ]; then
+            echo "ERROR: styles.css is missing."
+            exit 1
+          fi
+
+          echo "Release validated successfully."
+
+      - name: Remove old application
         shell: bash
         run: |
           set -e
 
-          find . -mindepth 1 -maxdepth 1             ! -name ".git"             ! -name ".github"             ! -name "monalisa-stock-erp-release.zip"             -exec rm -rf {} +
+          echo "Removing old application files..."
+
+          find . -mindepth 1 -maxdepth 1 \
+            ! -name ".git" \
+            ! -name ".github" \
+            ! -name ".release" \
+            ! -name "monalisa-stock-erp-release.zip" \
+            -exec rm -rf {} +
+
+          echo "Old application removed."
+
+      - name: Install new application
+        shell: bash
+        run: |
+          set -e
+
+          echo "Installing new application..."
 
           cp -a .release/. .
+
+          echo "New application installed."
+
+      - name: Remove temporary extraction
+        shell: bash
+        run: |
           rm -rf .release
 
-      - name: Commit replacement
+      - name: Commit deployed application
         shell: bash
         run: |
           set -e
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
